@@ -1,2 +1,8 @@
 .env
 .DS_Store
+
+# database
+data/
+*.db
+*.db-wal
+*.db-shm

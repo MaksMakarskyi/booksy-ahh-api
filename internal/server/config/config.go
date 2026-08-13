@@ -1,4 +1,4 @@
-package server
+package config
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 type Config struct {
 	Env  AppEnv `env:"APP_ENV, default=production"`
 	Port string `env:"PORT, default=8080"`
+
+	DatabaseUrl string `env:"DATABASE_URL, required"`
 }
 
 func LoadConfig(ctx context.Context) (*Config, error) {

@@ -3,19 +3,35 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server"
+	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
+	"github.com/MaksMakarskyi/booksy-go-api/internal/server/dependencies"
 )
 
 func main() {
 	ctx := context.Background()
 
-	cfg, err := server.LoadConfig(ctx)
+	cfg, err := config.LoadConfig(ctx)
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to load config: %v", err)
 	}
 
-	server := server.NewServer()
+	deps, err := dependencies.NewRegistry(ctx, cfg)
+	if err != nil {
+		log.Fatalf("failed to build dependecies: %v", err)
+	}
+	defer func() {
+		if err := deps.Close(); err != nil {
+			log.Fatalf("failed to close dependecies: %v", err)
+		}
+	}()
+
+	server, err := server.NewServer(deps)
+	if err != nil {
+		log.Fatalf("failed to create a server: %v", err)
+	}
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	if err := server.Start(addr); err != nil {

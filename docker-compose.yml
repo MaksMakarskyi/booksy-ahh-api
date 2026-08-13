@@ -7,7 +7,14 @@ services:
     restart: unless-stopped
     ports:
       - ${PORT}:${PORT}
+    volumes:
+      - ./data:/app/data
     environment:
       APP_ENV: ${APP_ENV}
       PORT: ${PORT}
+      DATABASE_URL: ${DATABASE_URL}
+      GOOSE_DRIVER: ${GOOSE_DRIVER}
+      GOOSE_DBSTRING: ${GOOSE_DBSTRING}
+      GOOSE_MIGRATION_DIR: ${GOOSE_MIGRATION_DIR}
+      GOOSE_TABLE: ${GOOSE_TABLE}
     
