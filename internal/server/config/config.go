@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/sethvargo/go-envconfig"
 )
@@ -23,6 +24,9 @@ func LoadConfig(ctx context.Context) (*Config, error) {
 
 	if !cfg.Env.IsValid() {
 		return nil, fmt.Errorf("APP_ENV is not valid, got: %q", cfg.Env)
+	}
+	if strings.TrimSpace(cfg.DatabaseUrl) == "" {
+		return nil, fmt.Errorf("DATABASE_URL must not be empty")
 	}
 
 	return cfg, nil

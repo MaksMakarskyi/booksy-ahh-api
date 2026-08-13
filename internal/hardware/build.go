@@ -8,6 +8,10 @@ import (
 
 // Build builds new handler from dependencies
 func Build(deps *dependencies.Registry) (*Handler, error) {
+	if deps == nil {
+		return nil, fmt.Errorf("dependencies registry cannot be nil")
+	}
+
 	store, err := NewSQLiteStore(&SQLiteStoreOptions{
 		Client: deps.DB,
 	})

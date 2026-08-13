@@ -40,7 +40,7 @@ func (sqls *SQLiteStore) GetAll(ctx context.Context) ([]Hardware, error) {
 	q := `SELECT id, name, brand, description, purchase_date, status, created_at, updated_at
 		  FROM hardware`
 
-	var hardwares []Hardware
+	hardwares := make([]Hardware, 0)
 	if err := sqlscan.Select(ctx, sqls.client, &hardwares, q); err != nil {
 		return nil, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
 	}

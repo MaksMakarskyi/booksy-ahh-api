@@ -13,6 +13,13 @@ import (
 )
 
 func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
+	if deps == nil {
+		return nil, fmt.Errorf("dependencies registry cannot be nil")
+	}
+	if deps.Config == nil {
+		return nil, fmt.Errorf("dependencies registry config cannot be nil")
+	}
+
 	hardwareHandler, err := hardware.Build(deps)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build hardware handler: %w", err)
