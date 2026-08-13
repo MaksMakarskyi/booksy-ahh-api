@@ -26,7 +26,12 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 	}
 
 	server := echo.New()
+	server.Validator = deps.Validator
+	server.HTTPErrorHandler = deps.ErrorHandler
+
 	server.Pre(middleware.RemoveTrailingSlash())
+	server.Use(middleware.RequestID())
+	server.Use(middleware.Recover())
 	server.Use(middleware.CORSWithConfig(cors(deps.Config)))
 	server.Use(middleware.ContextTimeout(time.Second * 15))
 
@@ -34,6 +39,7 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 
 	hardwareGroup := server.Group("/hardware")
 	hardwareGroup.GET("", hardwareHandler.GetAll)
+	hardwareGroup.POST("", hardwareHandler.Create)
 
 	return server, nil
 }

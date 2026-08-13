@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
 	"github.com/labstack/echo/v5"
 )
 
@@ -33,13 +34,30 @@ func NewHandler(opts *HandlerOptions) (*Handler, error) {
 func (h *Handler) GetAll(c *echo.Context) error {
 	hardwares, err := h.store.GetAll(c.Request().Context())
 	if err != nil {
-		c.Logger().Error("failed to get hardwares from the store", "error", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "internal error",
-		})
+		return echo.ErrInternalServerError.Wrap(
+			fmt.Errorf("failed to get hardwares from the store: %w", err),
+		)
 	}
 
 	return c.JSON(http.StatusOK, map[string][]Hardware{
 		"data": hardwares,
+	})
+}
+
+func (h *Handler) Create(c *echo.Context) error {
+	newHardware, err := valutils.DecodeJSON[NewHardware](c)
+	if err != nil {
+		return err
+	}
+
+	storedHardware, err := h.store.Create(c.Request().Context(), newHardware)
+	if err != nil {
+		return echo.ErrInternalServerError.Wrap(
+			fmt.Errorf("failed to store new hardware: %w", err),
+		)
+	}
+
+	return c.JSON(http.StatusCreated, map[string]Hardware{
+		"data": storedHardware,
 	})
 }
