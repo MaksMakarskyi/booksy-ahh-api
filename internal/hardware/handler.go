@@ -35,7 +35,7 @@ func NewHandler(opts *HandlerOptions) (*Handler, error) {
 func (h *Handler) GetAll(c *echo.Context) error {
 	hardwares, err := h.store.GetAll(c.Request().Context())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get all harware items: %w", err)
 	}
 
 	return c.JSON(http.StatusOK, map[string][]Hardware{
@@ -76,9 +76,12 @@ func (h *Handler) Update(c *echo.Context) error {
 }
 
 func (h *Handler) Delete(c *echo.Context) error {
-	hardwareID, err := strconv.Atoi(c.Param("id"))
+	paramID := c.Param("id")
+	hardwareID, err := strconv.Atoi(paramID)
 	if err != nil {
-		return fmt.Errorf("invalid 'id' path parameter: %s", c.Param("id"))
+		return echo.ErrBadRequest.Wrap(
+			fmt.Errorf("invalid 'id' path parameter: %s", paramID),
+		)
 	}
 
 	deletedHardware, err := h.store.Delete(c.Request().Context(), hardwareID)

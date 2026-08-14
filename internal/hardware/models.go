@@ -47,7 +47,7 @@ var (
 )
 
 type UpdatedHardware struct {
-	ID           int     `param:"id"`
+	ID           int     `json:"-"             param:"id"`
 	Name         *string `json:"name"          validate:"omitempty,min=1,max=255"`
 	Brand        *string `json:"brand"         validate:"omitempty,min=1,max=255"`
 	Description  *string `json:"description"   validate:"omitempty,min=1,max=4096"`

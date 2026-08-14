@@ -3,6 +3,7 @@ package validation
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/labstack/echo/v5"
@@ -20,6 +21,12 @@ func (StrictJSONSerializer) Deserialize(c *echo.Context, target any) error {
 
 	if err := dec.Decode(target); err != nil {
 		return echo.ErrBadRequest.Wrap(unknownFieldError(err))
+	}
+
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		return echo.ErrBadRequest.Wrap(
+			fmt.Errorf("request body must contain a single JSON value"),
+		)
 	}
 
 	return nil
