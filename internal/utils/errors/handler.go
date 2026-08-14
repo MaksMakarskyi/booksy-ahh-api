@@ -84,9 +84,9 @@ func translate(err error) (int, ErrorBody) {
 	}
 
 	switch {
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, ErrStoreNotFound):
 		return http.StatusNotFound, ErrorBody{Message: "The requested resource does not exist."}
-	case errors.Is(err, ErrConflict):
+	case errors.Is(err, ErrStoreConflict):
 		return http.StatusConflict, ErrorBody{Message: "The request conflicts with the current state of the resource."}
 	case errors.Is(err, context.DeadlineExceeded):
 		return http.StatusServiceUnavailable, ErrorBody{Message: "The request took too long. Please try again."}

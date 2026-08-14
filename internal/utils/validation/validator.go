@@ -61,19 +61,40 @@ func (e *ValidationError) Error() string {
 	return "validation failed: " + strings.Join(parts, "; ")
 }
 
+type SelfValidator interface {
+	SelfValidate() []FieldError
+}
+
 func (cv *CustomValidator) Validate(i any) error {
-	err := cv.validator.Struct(i)
-	if err == nil {
+	fields, err := cv.tagFields(i)
+	if err != nil {
+		return err
+	}
+
+	if sv, ok := i.(SelfValidator); ok {
+		fields = append(fields, sv.SelfValidate()...)
+	}
+
+	if len(fields) == 0 {
 		return nil
 	}
 
+	return &ValidationError{Fields: fields}
+}
+
+func (cv *CustomValidator) tagFields(i any) ([]FieldError, error) {
+	err := cv.validator.Struct(i)
+	if err == nil {
+		return nil, nil
+	}
+
 	if invalid, ok := errors.AsType[*validator.InvalidValidationError](err); ok {
-		return invalid
+		return nil, invalid
 	}
 
 	var validationErrs validator.ValidationErrors
 	if !errors.As(err, &validationErrs) {
-		return err
+		return nil, err
 	}
 
 	fields := make([]FieldError, 0, len(validationErrs))
@@ -85,7 +106,7 @@ func (cv *CustomValidator) Validate(i any) error {
 		})
 	}
 
-	return &ValidationError{Fields: fields}
+	return fields, nil
 }
 
 func message(fe validator.FieldError) string {

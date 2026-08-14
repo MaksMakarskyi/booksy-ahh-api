@@ -4,6 +4,6 @@ import "errors"
 
 var (
 	ErrStoreInternal = errors.New("internal store error")
-	ErrNotFound      = errors.New("not found")
-	ErrConflict      = errors.New("conflicting state")
+	ErrStoreNotFound = errors.New("not found")
+	ErrStoreConflict = errors.New("conflicting state")
 )

@@ -27,6 +27,7 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 
 	server := echo.New()
 	server.Validator = deps.Validator
+	server.JSONSerializer = deps.JSONSerializer
 	server.HTTPErrorHandler = deps.ErrorHandler
 
 	server.Pre(middleware.RemoveTrailingSlash())
@@ -39,7 +40,9 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 
 	hardwareGroup := server.Group("/hardware")
 	hardwareGroup.GET("", hardwareHandler.GetAll)
-	hardwareGroup.POST("", hardwareHandler.Create)
+	hardwareGroup.POST("", hardwareHandler.Create)       // TODO: cover with admin middleware
+	hardwareGroup.PATCH("/:id", hardwareHandler.Update)  // TODO: cover with admin middleware
+	hardwareGroup.DELETE("/:id", hardwareHandler.Delete) // TODO: cover with admin middleware
 
 	return server, nil
 }

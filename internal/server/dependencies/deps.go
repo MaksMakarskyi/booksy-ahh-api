@@ -17,8 +17,9 @@ type Registry struct {
 	Config *config.Config
 
 	// Echo dependencies
-	Validator    *valutils.CustomValidator
-	ErrorHandler echo.HTTPErrorHandler
+	Validator      echo.Validator
+	ErrorHandler   echo.HTTPErrorHandler
+	JSONSerializer echo.JSONSerializer
 }
 
 func NewRegistry(ctx context.Context, cfg *config.Config) (*Registry, error) {
@@ -42,13 +43,16 @@ func NewRegistry(ctx context.Context, cfg *config.Config) (*Registry, error) {
 		return nil, fmt.Errorf("failed to build error handler: %w", err)
 	}
 
+	jsonSerializer := valutils.StrictJSONSerializer{}
+
 	// Registry
 	registry := Registry{
 		DB:     db,
 		Config: cfg,
 
-		Validator:    val,
-		ErrorHandler: errorHandler,
+		Validator:      val,
+		ErrorHandler:   errorHandler,
+		JSONSerializer: jsonSerializer,
 	}
 
 	return &registry, nil
