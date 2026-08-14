@@ -19,6 +19,8 @@ type Store interface {
 
 const HarwareColumns = "id, name, brand, description, purchase_date, status, created_at, updated_at"
 
+var _ Store = (*SQLiteStore)(nil)
+
 type SQLiteStore struct {
 	client *sql.DB
 }

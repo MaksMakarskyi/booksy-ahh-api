@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sethvargo/go-envconfig"
 )
@@ -13,7 +14,12 @@ type Config struct {
 	Port string `env:"PORT, default=8080"`
 
 	DatabaseUrl string `env:"DATABASE_URL, required"`
+
+	JWTSecret string        `env:"JWT_SECRET, required"`
+	JWTTTL    time.Duration `env:"JWT_TTL, default=12h"`
 }
+
+const minJWTSecretBytes = 32
 
 func LoadConfig(ctx context.Context) (*Config, error) {
 	cfg := new(Config)
@@ -27,6 +33,15 @@ func LoadConfig(ctx context.Context) (*Config, error) {
 	}
 	if strings.TrimSpace(cfg.DatabaseUrl) == "" {
 		return nil, fmt.Errorf("DATABASE_URL must not be empty")
+	}
+	if len(cfg.JWTSecret) < minJWTSecretBytes {
+		return nil, fmt.Errorf(
+			"JWT_SECRET must be at least %d bytes, got %d",
+			minJWTSecretBytes, len(cfg.JWTSecret),
+		)
+	}
+	if cfg.JWTTTL <= 0 {
+		return nil, fmt.Errorf("JWT_TTL must be positive, got %s", cfg.JWTTTL)
 	}
 
 	return cfg, nil

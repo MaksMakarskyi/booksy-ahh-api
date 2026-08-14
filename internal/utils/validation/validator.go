@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -39,7 +41,38 @@ func NewCustomValidator() *CustomValidator {
 		return value <= time.Now().UTC().Format(DateLayout)
 	})
 
+	_ = val.RegisterValidation("password", hasRequiredCharClasses)
+	_ = val.RegisterValidation("maxbytes", withinByteLimit)
+
 	return &CustomValidator{validator: val}
+}
+
+func hasRequiredCharClasses(fl validator.FieldLevel) bool {
+	var hasLower, hasUpper, hasDigit, hasSpecial bool
+
+	for _, r := range fl.Field().String() {
+		switch {
+		case unicode.IsLower(r):
+			hasLower = true
+		case unicode.IsUpper(r):
+			hasUpper = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		case unicode.IsPunct(r), unicode.IsSymbol(r):
+			hasSpecial = true
+		}
+	}
+
+	return hasLower && hasUpper && hasDigit && hasSpecial
+}
+
+func withinByteLimit(fl validator.FieldLevel) bool {
+	limit, err := strconv.Atoi(fl.Param())
+	if err != nil {
+		return false
+	}
+
+	return len(fl.Field().String()) <= limit
 }
 
 type FieldError struct {
@@ -125,6 +158,11 @@ func message(fe validator.FieldError) string {
 		return "must be one of: " + strings.ReplaceAll(fe.Param(), " ", ", ")
 	case "email":
 		return "must be a valid email address"
+	case "password":
+		return "must contain a lowercase letter, an uppercase letter, " +
+			"a digit and a special character"
+	case "maxbytes":
+		return fmt.Sprintf("must be at most %s bytes", fe.Param())
 	default:
 		return "is invalid"
 	}

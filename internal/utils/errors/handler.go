@@ -86,6 +86,10 @@ func translate(err error) (int, ErrorBody) {
 	switch {
 	case errors.Is(err, ErrStoreNotFound):
 		return http.StatusNotFound, ErrorBody{Message: "The requested resource does not exist."}
+	case errors.Is(err, ErrInvalidBearerToken):
+		return http.StatusUnauthorized, ErrorBody{Message: "Missing or invalid access token."}
+	case errors.Is(err, ErrInvalidCredentials):
+		return http.StatusUnauthorized, ErrorBody{Message: "Invalid email or password."}
 	case errors.Is(err, ErrStoreConflict):
 		return http.StatusConflict, ErrorBody{Message: "The request conflicts with the current state of the resource."}
 	case errors.Is(err, context.DeadlineExceeded):

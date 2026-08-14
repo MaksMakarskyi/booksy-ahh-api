@@ -1,0 +1,23 @@
+package profiles
+
+import (
+	"strings"
+
+	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
+)
+
+var (
+	_ valutils.Normalizer = (*CreateProfileReq)(nil)
+)
+
+type CreateProfileReq struct {
+	Email    string      `json:"email"     validate:"required,max=255,email"`
+	Password string      `json:"password"  validate:"required,min=8,maxbytes=72,password"`
+	FullName string      `json:"full_name" validate:"required,min=2,max=255"`
+	Role     ProfileRole `json:"role"      validate:"required,oneof=employee admin"`
+}
+
+func (cpr *CreateProfileReq) Normalize() {
+	cpr.Email = strings.ToLower(strings.TrimSpace(cpr.Email))
+	cpr.FullName = strings.TrimSpace(cpr.FullName)
+}

@@ -7,14 +7,16 @@ import (
 
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
 	errutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/errors"
+	jwtutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/jwt"
 	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
 	"github.com/labstack/echo/v5"
 )
 
 type Registry struct {
 	// Main dependencies
-	DB     *sql.DB
-	Config *config.Config
+	DB        *sql.DB
+	JWTIssuer *jwtutils.Issuer
+	Config    *config.Config
 
 	// Echo dependencies
 	Validator      echo.Validator
@@ -35,6 +37,14 @@ func NewRegistry(ctx context.Context, cfg *config.Config) (*Registry, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
+	jwtIssuer, err := jwtutils.NewIssuer(&jwtutils.IssuerOptions{
+		Secret: cfg.JWTSecret,
+		TTL:    cfg.JWTTTL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build token issuer: %w", err)
+	}
+
 	// Echo dependencies
 	val := valutils.NewCustomValidator()
 
@@ -47,8 +57,9 @@ func NewRegistry(ctx context.Context, cfg *config.Config) (*Registry, error) {
 
 	// Registry
 	registry := Registry{
-		DB:     db,
-		Config: cfg,
+		DB:        db,
+		JWTIssuer: jwtIssuer,
+		Config:    cfg,
 
 		Validator:      val,
 		ErrorHandler:   errorHandler,
