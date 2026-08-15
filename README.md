@@ -333,8 +333,6 @@ The suite also exercises startup: every test runs the real migrations and the re
 
 ## The AI development log
 
-> **Note for the author:** the sections below are pre-filled from the actual development session and are accurate as far as they go. `<...>` placeholders and the prompt trail still need your input.
-
 ### Tooling
 
 | Tool | Used for |

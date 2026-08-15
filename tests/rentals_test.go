@@ -106,7 +106,10 @@ func TestRentalsAreScopedToTheirOwner(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				_, body := a.call(tt.token, "GET", "/rentals", "")
+				status, body := a.call(tt.token, "GET", "/rentals", "")
+				if status != 200 {
+					t.Fatalf("status = %d, want 200 (%s)", status, body)
+				}
 
 				if tt.wantRental == 0 {
 					if got := count(t, body, "data"); got != 0 {
