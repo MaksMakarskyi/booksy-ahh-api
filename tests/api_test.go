@@ -39,17 +39,17 @@ func newAPI(t *testing.T, tweak ...func(*config.Config)) *api {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 
 	cfg := &config.Config{
-		Env:           config.Production,
-		Port:          "0",
-		DatabaseUrl:   "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)",
-		JWTSecret:     "test-jwt-secret-with-at-least-32-bytes",
-		JWTTTL:        time.Hour,
-		CORSOrigins:   []string{"*"},
-		RateLimitRPS:  10_000,
-		GooseTable:    "goose_migrations",
-		AdminEmail:    adminEmail,
-		AdminPassword: adminPassword,
-		AdminName:     "Test Admin",
+		Env:          config.Production,
+		Port:         "0",
+		DatabaseUrl:  "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)",
+		JWTSecret:    "test-jwt-secret-with-at-least-32-bytes",
+		JWTTTL:       time.Hour,
+		CORSOrigins:  []string{"*"},
+		RateLimitRPS: 10_000,
+		GooseTable:   "goose_migrations",
+		Admins: config.AdminAccounts{
+			{Email: adminEmail, Password: adminPassword, FullName: "Test Admin"},
+		},
 	}
 	for _, apply := range tweak {
 		apply(cfg)
@@ -66,8 +66,8 @@ func newAPI(t *testing.T, tweak ...func(*config.Config)) *api {
 	if err := migrate.Up(deps.DB, cfg.GooseTable); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
-	if _, err := profiles.EnsureAdmin(ctx, deps); err != nil {
-		t.Fatalf("ensure admin: %v", err)
+	if _, err := profiles.EnsureAdmins(ctx, deps); err != nil {
+		t.Fatalf("ensure admins: %v", err)
 	}
 
 	handler, err := server.NewServer(deps)

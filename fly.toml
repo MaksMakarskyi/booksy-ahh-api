@@ -10,8 +10,6 @@ primary_region = 'fra'
   dockerfile = 'Dockerfile'
 
 [env]
-  ADMIN_EMAIL = 'maksym.makarskyi@booksy.com'
-  ADMIN_NAME = 'Maksym Makarskyi'
   APP_ENV = 'production'
   CORS_ORIGINS = 'https://booksy-ahh.vercel.app'
   DATABASE_URL = 'file:data/hardware-hub.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)'

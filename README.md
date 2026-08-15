@@ -43,7 +43,7 @@ make compose
 
 The API is available on `http://localhost:8080`.
 
-The container is self-sufficient: migrations are **embedded in the binary** and applied at startup, and the first admin account is created from `ADMIN_EMAIL` / `ADMIN_PASSWORD`. No manual migration step, no seeding step.
+The container is self-sufficient: migrations are **embedded in the binary** and applied at startup, and the admin accounts listed in `ADMINS` are created if they are absent. No manual migration step, no seeding step.
 
 ### Option B — local Go toolchain
 
@@ -61,7 +61,7 @@ curl -s localhost:8080/healthz
 
 TOKEN=$(curl -s -X POST localhost:8080/auth/token \
   -H 'Content-Type: application/json' \
-  -d '{"email":"<ADMIN_EMAIL>","password":"<ADMIN_PASSWORD>"}' \
+  -d '{"email":"<ADMIN_EMAIL_FROM_ADMINS>","password":"<ITS_PASSWORD>"}' \
   | jq -r .data.access_token)
 
 curl -s localhost:8080/hardware -H "Authorization: Bearer $TOKEN" | jq
@@ -96,11 +96,30 @@ All configuration is environment variables. `.env` is loaded by `make` targets a
 | `JWT_TTL` | no | `12h` | Access token lifetime. |
 | `CORS_ORIGINS` | no | `*` | Comma-separated. Set to the frontend origin in production. |
 | `RATE_LIMIT_RPS` | no | `15` | Requests per second per IP, across all routes. |
-| `ADMIN_EMAIL` | **yes** | — | First admin, created at startup if absent. |
-| `ADMIN_PASSWORD` | **yes** | — | Must satisfy the same password policy as the API. |
-| `ADMIN_NAME` | no | `Administrator` | |
+| `ADMINS` | **yes** | — | JSON array of admin accounts, created at startup. See below. |
 | `GOOSE_TABLE` | no | `goose_migrations` | Migration bookkeeping table. |
 | `GOOSE_DRIVER`, `GOOSE_DBSTRING`, `GOOSE_MIGRATION_DIR` | no | — | Only used by the goose **CLI** (`make migrate`). |
+
+### Bootstrap admins
+
+Accounts cannot self-register, so the system needs at least one admin before anyone can log in. `ADMINS` is that list:
+
+```bash
+ADMINS='[{"email":"you@booksy.com","full_name":"Your Name","password":"Str0ngPass!"},
+         {"email":"colleague@booksy.com","full_name":"A Colleague","password":"An0therPass!"}]'
+```
+
+Single quotes around the value are required — it contains double quotes.
+
+Every entry goes through **the same validation as `POST /profiles`**: a `@booksy.com` address, a name of at least two characters, and a password meeting the character-class policy. The whole list is validated before anything is written, so a typo in the third entry cannot leave the first two created and the boot half-finished. Two entries with the same address are rejected by position rather than silently collapsing into one.
+
+The step is idempotent. An account that already exists is left untouched — **including its password**, so editing `ADMINS` will not reset a password somebody has already changed. On a fresh volume the logs show which accounts were created:
+
+```
+created 2 admin profile(s): you@booksy.com, colleague@booksy.com
+```
+
+Because the value contains passwords, treat the whole variable as a secret: `fly secrets set ADMINS=...`, never `[env]` in `fly.toml`. Adding an admin later does not need this file at all — any admin can create another through `POST /profiles` with `"role": "admin"`.
 
 ### The database DSN
 
@@ -179,7 +198,7 @@ Every response carries an `X-Request-Id`, echoed in the body and in every log li
 - Accounts cannot self-register. Only an admin creates accounts.
 - Admins see the full account list, their colleagues included. Deletion is narrower than listing: the `DELETE` statement matches `role = 'employee'`, so an admin account can be listed but never removed through the API, and no one can delete themselves. Both refusals are deliberate — demoting or removing the last admin would lock everybody out of account management.
 - Only `@booksy.com` addresses may hold an account. Enforced on account creation and on the startup admin bootstrap, after the address is lowercased, so `Name@BOOKSY.COM` is accepted and stored as `name@booksy.com`.
-- The seed contains **inventory only** — no accounts and no rentals. The only account on a fresh install is the admin created from `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+- The seed contains **inventory only** — no accounts and no rentals. The only accounts on a fresh install are the admins listed in `ADMINS`.
 
 ## Architecture
 
@@ -385,15 +404,18 @@ Deployed to **Fly.io**. SQLite needs one machine, one writer and a real filesyst
 ```bash
 fly apps create <APP_NAME>
 fly volumes create hardware_hub_data --region fra --size 1 --yes
-fly secrets set JWT_SECRET="$(openssl rand -base64 48)" ADMIN_PASSWORD='<STRONG_PASSWORD>'
+fly secrets set JWT_SECRET="$(openssl rand -base64 48)"
+fly secrets set ADMINS='[{"email":"you@booksy.com","full_name":"Your Name","password":"<STRONG_PASSWORD>"}]'
 fly deploy --ha=false
 ```
+
+`ADMINS` is set separately because it holds passwords and shell-quoting a JSON blob alongside other assignments is easy to get wrong.
 
 `--ha=false` is not optional. Fly creates two machines by default; with SQLite that means two independent database files behind one hostname, and requests would see different data depending on which machine answered. **One volume, one machine.**
 
 ### What survives a deploy
 
-The image holds only the binary. The database lives on the mounted volume, so a new release never touches it. On boot the binary applies any pending migrations — idempotent, a no-op when there is nothing new — and ensures the admin account exists without overwriting an existing one.
+The image holds only the binary. The database lives on the mounted volume, so a new release never touches it. On boot the binary applies any pending migrations — idempotent, a no-op when there is nothing new — and ensures every account in `ADMINS` exists without overwriting one that already does.
 
 `auto_stop_machines` lets the machine sleep when idle and wake on the next request. The volume persists across stops, so only the machine is transient. Set `min_machines_running = 1` to avoid cold starts.
 
@@ -406,14 +428,27 @@ fly ssh console -C "rm -f /app/data/hardware-hub.db /app/data/hardware-hub.db-wa
 fly apps restart <APP_NAME>
 ```
 
-The next boot finds an empty volume, runs both migrations from scratch and recreates the admin.
+The next boot finds an empty volume, runs both migrations from scratch and recreates the admins.
+
+### Adding an admin to a running deployment
+
+Two ways, and the API one is usually better:
+
+```bash
+# Through the API — no restart, no secret change.
+curl -X POST https://<APP_NAME>.fly.dev/profiles \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"email":"new.admin@booksy.com","password":"Str0ngPass!","full_name":"New Admin","role":"admin"}'
+```
+
+Editing `ADMINS` also works — append an object and `fly secrets set ADMINS=...`, which restarts the machine and creates only the new entry. Use it when the account must survive a volume wipe; otherwise prefer the API, so passwords do not accumulate in configuration.
 
 ### Production checklist
 
 - `APP_ENV=production` — hides the `debug` field from error responses.
 - `CORS_ORIGINS=<FRONTEND_ORIGIN>` — not `*`.
-- `JWT_SECRET` via `fly secrets`, never in `fly.toml`. Generate with `openssl rand -base64 48`.
-- Rotate `ADMIN_PASSWORD` after first login. The bootstrap never overwrites an existing account, so the env value stops being authoritative the moment the admin changes it.
+- `JWT_SECRET` and `ADMINS` via `fly secrets`, never in `fly.toml` — `ADMINS` contains passwords. Generate the secret with `openssl rand -base64 48`.
+- Rotate every password in `ADMINS` after first login. The bootstrap never overwrites an existing account, so those values stop being authoritative the moment an admin changes their own password — but they are still sitting in your secrets store.
 - Back up before a migration that is not purely additive:
   ```bash
   fly ssh console -C "cp /app/data/hardware-hub.db /app/data/pre-deploy.db"

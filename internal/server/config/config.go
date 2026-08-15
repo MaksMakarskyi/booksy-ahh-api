@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -24,9 +25,7 @@ type Config struct {
 
 	GooseTable string `env:"GOOSE_TABLE, default=goose_migrations"`
 
-	AdminEmail    string `env:"ADMIN_EMAIL, required"`
-	AdminPassword string `env:"ADMIN_PASSWORD, required"`
-	AdminName     string `env:"ADMIN_NAME, default=Administrator"`
+	Admins AdminAccounts `env:"ADMINS, required"`
 }
 
 const minJWTSecretBytes = 32
@@ -59,6 +58,9 @@ func LoadConfig(ctx context.Context) (*Config, error) {
 	if cfg.RateLimitRPS <= 0 {
 		return nil, fmt.Errorf("RATE_LIMIT_RPS must be positive, got %v", cfg.RateLimitRPS)
 	}
+	if len(cfg.Admins) == 0 {
+		return nil, fmt.Errorf("ADMINS must list at least one account")
+	}
 
 	return cfg, nil
 }
@@ -77,4 +79,30 @@ func (ae AppEnv) IsValid() bool {
 	default:
 		return false
 	}
+}
+
+type AdminAccount struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	FullName string `json:"full_name"`
+}
+
+type AdminAccounts []AdminAccount
+
+var _ envconfig.Decoder = (*AdminAccounts)(nil)
+
+func (aa *AdminAccounts) EnvDecode(val string) error {
+	decoder := json.NewDecoder(strings.NewReader(val))
+	decoder.DisallowUnknownFields()
+
+	var accounts []AdminAccount
+	if err := decoder.Decode(&accounts); err != nil {
+		return fmt.Errorf(
+			`ADMINS must be a JSON array of {"email","full_name","password"} objects: %w`, err,
+		)
+	}
+
+	*aa = accounts
+
+	return nil
 }

@@ -3,6 +3,8 @@ package tests
 import (
 	"fmt"
 	"testing"
+
+	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
 )
 
 func TestOnlyTheAdminExistsOnAFreshInstall(t *testing.T) {
@@ -17,6 +19,35 @@ func TestOnlyTheAdminExistsOnAFreshInstall(t *testing.T) {
 	}
 	if got := field(t, body, "data.0.email"); got != adminEmail {
 		t.Errorf("email = %v, want %s", got, adminEmail)
+	}
+}
+
+func TestBootstrapCreatesEveryConfiguredAdmin(t *testing.T) {
+	a := newAPI(t, func(c *config.Config) {
+		c.Admins = append(c.Admins, config.AdminAccount{
+			Email:    "  SECOND.Admin@Booksy.com  ",
+			Password: userPassword,
+			FullName: "  Second Admin  ",
+		})
+	})
+
+	second := a.login("second.admin@booksy.com", userPassword)
+
+	status, body := a.call(second, "GET", "/profiles", "")
+	if status != 200 {
+		t.Fatalf("status = %d, want 200 (%s)", status, body)
+	}
+	if got := count(t, body, "data"); got != 2 {
+		t.Fatalf("got %d profiles, want both configured admins (%s)", got, body)
+	}
+
+	for i := range count(t, body, "data") {
+		if got := field(t, body, fmt.Sprintf("data.%d.role", i)); got != "admin" {
+			t.Errorf("profile %d has role %v, want admin", i, got)
+		}
+	}
+	if got := field(t, body, "data.1.full_name"); got != "Second Admin" {
+		t.Errorf("full_name = %q, want it trimmed", got)
 	}
 }
 

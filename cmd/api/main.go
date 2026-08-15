@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/MaksMakarskyi/booksy-go-api/internal/profiles"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server"
@@ -34,14 +35,14 @@ func main() {
 		log.Fatalf("failed to apply migrations: %v", err)
 	}
 
-	created, err := profiles.EnsureAdmin(ctx, deps)
+	created, err := profiles.EnsureAdmins(ctx, deps)
 	if err != nil {
-		log.Fatalf("failed to ensure admin profile: %v", err)
+		log.Fatalf("failed to ensure admin profiles: %v", err)
 	}
-	if created {
-		log.Print("created admin profile")
+	if len(created) > 0 {
+		log.Printf("created %d admin profile(s): %s", len(created), strings.Join(created, ", "))
 	} else {
-		log.Print("admin profile already exists, left unchanged")
+		log.Printf("all %d admin profile(s) already exist, left unchanged", len(cfg.Admins))
 	}
 
 	srv, err := server.NewServer(deps)
