@@ -90,6 +90,8 @@ func translate(err error) (int, ErrorBody) {
 		return http.StatusUnauthorized, ErrorBody{Message: "Missing or invalid access token."}
 	case errors.Is(err, ErrInvalidCredentials):
 		return http.StatusUnauthorized, ErrorBody{Message: "Invalid email or password."}
+	case errors.Is(err, ErrStoreForbidden):
+		return http.StatusForbidden, ErrorBody{Message: "You are not allowed to perform this action."}
 	case errors.Is(err, ErrStoreConflict):
 		return http.StatusConflict, ErrorBody{Message: "The request conflicts with the current state of the resource."}
 	case errors.Is(err, context.DeadlineExceeded):

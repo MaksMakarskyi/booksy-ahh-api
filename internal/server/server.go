@@ -8,6 +8,7 @@ import (
 	"github.com/MaksMakarskyi/booksy-go-api/internal/auth"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/hardware"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/profiles"
+	"github.com/MaksMakarskyi/booksy-go-api/internal/rentals"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/dependencies"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -27,6 +28,11 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 	hardwareHandler, err := hardware.Build(deps)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build hardware handler: %w", err)
+	}
+
+	rentalHandler, err := rentals.Build(deps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build rental handler: %w", err)
 	}
 
 	profileHandler, err := profiles.Build(deps)
@@ -67,8 +73,15 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 	hardwareGroup.PATCH("/:id", hardwareHandler.Update, adminMiddleware)
 	hardwareGroup.DELETE("/:id", hardwareHandler.Delete, adminMiddleware)
 
+	rentalGroup := server.Group("/rentals", authMiddleware)
+	rentalGroup.GET("", rentalHandler.GetAll)
+	rentalGroup.POST("", rentalHandler.Create)
+	rentalGroup.PATCH("/:id/return", rentalHandler.Return)
+
 	profileGroup := server.Group("/profiles", authMiddleware, adminMiddleware)
+	profileGroup.GET("", profileHandler.GetAll)
 	profileGroup.POST("", profileHandler.Create)
+	profileGroup.DELETE("/:id", profileHandler.Delete)
 
 	authGroup := server.Group("/auth")
 	authGroup.POST("/token", authHandler.CreateToken)

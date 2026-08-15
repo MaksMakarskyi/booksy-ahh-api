@@ -10,14 +10,39 @@ import (
 	"github.com/georgysavva/scany/v2/sqlscan"
 )
 
+const (
+	hardwareColumns = "id, name, brand, description, purchase_date, status, created_at, updated_at"
+
+	getAllQuery = `
+SELECT ` + hardwareColumns + `
+FROM hardware`
+
+	createQuery = `
+INSERT INTO hardware (name, brand, description, purchase_date)
+VALUES ($1, $2, $3, $4)
+RETURNING ` + hardwareColumns
+
+	updateQuery = `
+UPDATE hardware
+SET name          = COALESCE($1, name),
+    brand         = COALESCE($2, brand),
+    description   = COALESCE($3, description),
+    purchase_date = COALESCE($4, purchase_date)
+WHERE id = $5
+RETURNING ` + hardwareColumns
+
+	deleteQuery = `
+DELETE FROM hardware
+WHERE id = $1
+RETURNING ` + hardwareColumns
+)
+
 type Store interface {
 	GetAll(ctx context.Context) ([]Hardware, error)
 	Create(ctx context.Context, newHardware NewHardware) (Hardware, error)
 	Update(ctx context.Context, updatedHardware UpdatedHardware) (Hardware, error)
 	Delete(ctx context.Context, hardwareID int) (Hardware, error)
 }
-
-const HarwareColumns = "id, name, brand, description, purchase_date, status, created_at, updated_at"
 
 var _ Store = (*SQLiteStore)(nil)
 
@@ -37,34 +62,21 @@ func NewSQLiteStore(opts *SQLiteStoreOptions) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("SQLiteStoreOptions.Client cannot be nil")
 	}
 
-	store := &SQLiteStore{
-		client: opts.Client,
-	}
-
-	return store, nil
+	return &SQLiteStore{client: opts.Client}, nil
 }
 
-var getAllQuery = fmt.Sprintf("SELECT %s FROM hardware", HarwareColumns)
-
-func (sqls *SQLiteStore) GetAll(ctx context.Context) ([]Hardware, error) {
+func (s *SQLiteStore) GetAll(ctx context.Context) ([]Hardware, error) {
 	res := make([]Hardware, 0)
-	if err := sqlscan.Select(ctx, sqls.client, &res, getAllQuery); err != nil {
+	if err := sqlscan.Select(ctx, s.client, &res, getAllQuery); err != nil {
 		return nil, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
 	}
 
 	return res, nil
 }
 
-var createQuery = fmt.Sprintf(
-	`INSERT INTO hardware (name, brand, description, purchase_date)
-	 VALUES ($1, $2, $3, $4)
-	 RETURNING %s`,
-	HarwareColumns,
-)
-
-func (sqls *SQLiteStore) Create(ctx context.Context, newHardware NewHardware) (Hardware, error) {
+func (s *SQLiteStore) Create(ctx context.Context, newHardware NewHardware) (Hardware, error) {
 	var res Hardware
-	if err := sqlscan.Get(ctx, sqls.client, &res, createQuery,
+	if err := sqlscan.Get(ctx, s.client, &res, createQuery,
 		newHardware.Name,
 		newHardware.Brand,
 		newHardware.Description,
@@ -76,20 +88,9 @@ func (sqls *SQLiteStore) Create(ctx context.Context, newHardware NewHardware) (H
 	return res, nil
 }
 
-var updateQuery = fmt.Sprintf(
-	`UPDATE hardware
-	 SET name          = COALESCE($1, name),
-		 brand         = COALESCE($2, brand),
-		 description   = COALESCE($3, description),
-		 purchase_date = COALESCE($4, purchase_date)
-	 WHERE id = $5
-	 RETURNING %s`,
-	HarwareColumns,
-)
-
-func (sqlc *SQLiteStore) Update(ctx context.Context, updatedHardware UpdatedHardware) (Hardware, error) {
+func (s *SQLiteStore) Update(ctx context.Context, updatedHardware UpdatedHardware) (Hardware, error) {
 	var res Hardware
-	if err := sqlscan.Get(ctx, sqlc.client, &res, updateQuery,
+	if err := sqlscan.Get(ctx, s.client, &res, updateQuery,
 		updatedHardware.Name,
 		updatedHardware.Brand,
 		updatedHardware.Description,
@@ -97,7 +98,7 @@ func (sqlc *SQLiteStore) Update(ctx context.Context, updatedHardware UpdatedHard
 		updatedHardware.ID,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Hardware{}, fmt.Errorf("hardware: %w", errutils.ErrStoreNotFound)
+			return Hardware{}, fmt.Errorf("hardware %d: %w", updatedHardware.ID, errutils.ErrStoreNotFound)
 		}
 
 		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
@@ -106,18 +107,11 @@ func (sqlc *SQLiteStore) Update(ctx context.Context, updatedHardware UpdatedHard
 	return res, nil
 }
 
-var deleteQuery = fmt.Sprintf(
-	`DELETE FROM hardware 
-	 WHERE id = $1 
-	 RETURNING %s`,
-	HarwareColumns,
-)
-
-func (sqls *SQLiteStore) Delete(ctx context.Context, hardwareID int) (Hardware, error) {
+func (s *SQLiteStore) Delete(ctx context.Context, hardwareID int) (Hardware, error) {
 	var res Hardware
-	if err := sqlscan.Get(ctx, sqls.client, &res, deleteQuery, hardwareID); err != nil {
+	if err := sqlscan.Get(ctx, s.client, &res, deleteQuery, hardwareID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Hardware{}, fmt.Errorf("hardware: %w", errutils.ErrStoreNotFound)
+			return Hardware{}, fmt.Errorf("hardware %d: %w", hardwareID, errutils.ErrStoreNotFound)
 		}
 
 		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)

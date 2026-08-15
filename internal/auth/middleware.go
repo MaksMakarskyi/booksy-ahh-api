@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MaksMakarskyi/booksy-go-api/internal/profiles"
+	"github.com/MaksMakarskyi/booksy-go-api/internal/profiles/roles"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/dependencies"
 	errutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/errors"
 	"github.com/labstack/echo/v5"
@@ -38,7 +38,7 @@ func Middleware(deps *dependencies.Registry) (echo.MiddlewareFunc, error) {
 				return false, fmt.Errorf("%w: %w", errutils.ErrInvalidBearerToken, err)
 			}
 
-			role := profiles.ProfileRole(claims.Role)
+			role := roles.Role(claims.Role)
 			if !role.IsValid() {
 				return false, fmt.Errorf(
 					"%w: unknown role %q", errutils.ErrInvalidBearerToken, claims.Role,
@@ -69,7 +69,7 @@ func AdminMiddleware() echo.MiddlewareFunc {
 				return err
 			}
 
-			if user.Role != profiles.Admin {
+			if user.Role != roles.Admin {
 				return echo.ErrForbidden
 			}
 

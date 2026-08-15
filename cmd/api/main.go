@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/MaksMakarskyi/booksy-go-api/internal/profiles"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/dependencies"
@@ -27,6 +28,16 @@ func main() {
 			log.Fatalf("failed to close dependecies: %v", err)
 		}
 	}()
+
+	created, err := profiles.EnsureAdmin(ctx, deps)
+	if err != nil {
+		log.Fatalf("failed to ensure admin profile: %v", err)
+	}
+	if created {
+		log.Printf("created admin profile for %s", cfg.AdminEmail)
+	} else {
+		log.Printf("admin profile for %s already exists, left unchanged", cfg.AdminEmail)
+	}
 
 	server, err := server.NewServer(deps)
 	if err != nil {

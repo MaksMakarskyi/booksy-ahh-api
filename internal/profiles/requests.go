@@ -3,6 +3,7 @@ package profiles
 import (
 	"strings"
 
+	"github.com/MaksMakarskyi/booksy-go-api/internal/profiles/roles"
 	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
 )
 
@@ -11,10 +12,10 @@ var (
 )
 
 type CreateProfileReq struct {
-	Email    string      `json:"email"     validate:"required,max=255,email"`
-	Password string      `json:"password"  validate:"required,min=8,maxbytes=72,password"`
-	FullName string      `json:"full_name" validate:"required,min=2,max=255"`
-	Role     ProfileRole `json:"role"      validate:"required,oneof=employee admin"`
+	Email    string     `json:"email"     validate:"required,max=255,email"`
+	Password string     `json:"password"  validate:"required,min=8,maxbytes=72,password"`
+	FullName string     `json:"full_name" validate:"required,min=2,max=255"`
+	Role     roles.Role `json:"role"      validate:"required,oneof=employee admin"`
 }
 
 func (cpr *CreateProfileReq) Normalize() {

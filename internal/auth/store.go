@@ -10,6 +10,15 @@ import (
 	"github.com/georgysavva/scany/v2/sqlscan"
 )
 
+const (
+	credentialColumns = "id, email, full_name, role, password_hash"
+
+	getUserWithCredsQuery = `
+SELECT ` + credentialColumns + `
+FROM profiles
+WHERE email = $1`
+)
+
 type Store interface {
 	GetUserWithCreds(ctx context.Context, email string) (UserWithCreds, error)
 }
@@ -32,22 +41,12 @@ func NewSQLiteStore(opts *SQLiteStoreOptions) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("SQLiteStoreOptions.Client cannot be nil")
 	}
 
-	store := &SQLiteStore{
-		client: opts.Client,
-	}
-
-	return store, nil
+	return &SQLiteStore{client: opts.Client}, nil
 }
 
-var getUserWithCredsQuery = `
-SELECT id, email, full_name, role, password_hash
-FROM profiles
-WHERE email = $1
-`
-
-func (sqls *SQLiteStore) GetUserWithCreds(ctx context.Context, email string) (UserWithCreds, error) {
+func (s *SQLiteStore) GetUserWithCreds(ctx context.Context, email string) (UserWithCreds, error) {
 	var res UserWithCreds
-	if err := sqlscan.Get(ctx, sqls.client, &res, getUserWithCredsQuery, email); err != nil {
+	if err := sqlscan.Get(ctx, s.client, &res, getUserWithCredsQuery, email); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return UserWithCreds{}, fmt.Errorf("user: %w", errutils.ErrStoreNotFound)
 		}

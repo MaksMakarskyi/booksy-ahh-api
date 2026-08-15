@@ -17,6 +17,10 @@ type Config struct {
 
 	JWTSecret string        `env:"JWT_SECRET, required"`
 	JWTTTL    time.Duration `env:"JWT_TTL, default=12h"`
+
+	AdminEmail    string `env:"ADMIN_EMAIL, required"`
+	AdminPassword string `env:"ADMIN_PASSWORD, required"`
+	AdminName     string `env:"ADMIN_NAME, default=Administrator"`
 }
 
 const minJWTSecretBytes = 32

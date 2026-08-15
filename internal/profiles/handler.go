@@ -3,7 +3,9 @@ package profiles
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
+	"github.com/MaksMakarskyi/booksy-go-api/internal/auth"
 	errutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/errors"
 	pswutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/password"
 	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
@@ -33,6 +35,22 @@ func NewHandler(opts *HandlerOptions) (*Handler, error) {
 	return handler, nil
 }
 
+func (h *Handler) GetAll(c *echo.Context) error {
+	user, err := auth.GetUser(c)
+	if err != nil {
+		return err
+	}
+
+	storedProfiles, err := h.store.GetAll(c.Request().Context(), user.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get all profiles: %w", err)
+	}
+
+	return c.JSON(http.StatusOK, map[string][]Profile{
+		"data": storedProfiles,
+	})
+}
+
 func (h *Handler) Create(c *echo.Context) error {
 	var req CreateProfileReq
 	if err := valutils.DecodeJSON(c, &req); err != nil {
@@ -56,5 +74,29 @@ func (h *Handler) Create(c *echo.Context) error {
 
 	return c.JSON(http.StatusCreated, map[string]Profile{
 		"data": storedProfile,
+	})
+}
+
+func (h *Handler) Delete(c *echo.Context) error {
+	user, err := auth.GetUser(c)
+	if err != nil {
+		return err
+	}
+
+	paramID := c.Param("id")
+	profileID, err := strconv.Atoi(paramID)
+	if err != nil {
+		return echo.ErrBadRequest.Wrap(
+			fmt.Errorf("invalid 'id' path parameter: %s", paramID),
+		)
+	}
+
+	deletedProfile, err := h.store.Delete(c.Request().Context(), user.ID, profileID)
+	if err != nil {
+		return fmt.Errorf("failed to delete profile %d: %w", profileID, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]Profile{
+		"data": deletedProfile,
 	})
 }
