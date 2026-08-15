@@ -35,12 +35,7 @@ func NewHandler(opts *HandlerOptions) (*Handler, error) {
 }
 
 func (h *Handler) GetAll(c *echo.Context) error {
-	user, err := auth.GetUser(c)
-	if err != nil {
-		return err
-	}
-
-	storedProfiles, err := h.store.GetAll(c.Request().Context(), user.ID)
+	storedProfiles, err := h.store.GetAll(c.Request().Context())
 	if err != nil {
 		return fmt.Errorf("failed to get all profiles: %w", err)
 	}

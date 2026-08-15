@@ -52,6 +52,9 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 	}
 
 	adminMiddleware := auth.AdminMiddleware()
+	rateLimiterMiddlewre := middleware.RateLimiter(
+		middleware.NewRateLimiterMemoryStore(deps.Config.RateLimitRPS),
+	)
 
 	// Server
 	server := echo.New()
@@ -64,6 +67,7 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 	server.Use(middleware.Recover())
 	server.Use(middleware.CORSWithConfig(cors(deps.Config)))
 	server.Use(middleware.ContextTimeout(time.Second * 15))
+	server.Use(rateLimiterMiddlewre)
 
 	server.GET("/healthz", healthz)
 

@@ -7,32 +7,35 @@
 -- fictional laptops, and a migration that mixes both can't give you one
 -- without the other.
 --
+-- SEEDS INVENTORY ONLY. No accounts and no rentals are created here. The
+-- source dataset implied two holders (an "assignedTo" address and one unnamed
+-- holder), and an earlier revision of this file did create placeholder
+-- profiles plus their open rentals to keep `in_use` consistent. That produced
+-- a database nobody could unstick: the placeholders had no usable password, so
+-- no one could log in as them, and rentals may only be returned by their
+-- owner. Two devices were therefore permanently unavailable.
+--
+-- Seeding inventory alone keeps every seeded row in a state a real user can
+-- act on. The only account in the system is the admin created at startup from
+-- ADMIN_EMAIL / ADMIN_PASSWORD.
+--
 -- ============================================================================
 -- THE SOURCE DATA IS DELIBERATELY DIRTY. Every deviation below is a decision,
 -- not a cleanup, and is marked [D-n] at the point where it applies.
 -- ============================================================================
 
--- --- Accounts needed for referential integrity --------------------------
---
--- password_hash '!' is a sentinel meaning "no password set, login disabled".
--- No credentials are seeded: the admin account is bootstrapped at startup
--- from ADMIN_EMAIL/ADMIN_PASSWORD so a known password never ships in git.
-
-INSERT INTO profiles (id, email, full_name, role, password_hash) VALUES
-    (1, 'j.doe@booksy.com', 'J. Doe', 'employee', '!'),
-    -- [D-6] Placeholder holder for hardware 2. Not a real person; the
-    -- .invalid TLD (RFC 2606) guarantees it can never receive mail.
-    (2, 'unknown-holder@hardware-hub.invalid', 'Unknown holder (migrated)',
-        'employee', '!');
-
--- --- Inventory ----------------------------------------------------------
-
 INSERT INTO hardware (id, name, brand, purchase_date, status, description) VALUES
 
 -- [D-1] Status vocabulary mapped "Available"->available, "In Use"->in_use,
 -- "Repair"->repair. Display casing belongs in the UI, not the database.
+--
+-- [D-6] The two devices the source marked "In Use" are seeded as 'available'.
+-- `in_use` without an open rental row violates the model's core invariant, and
+-- an open rental requires an account that can log in to close it. Neither
+-- holder from the source is a real user of this system, so the honest starting
+-- state is "on the shelf". The rental history begins empty.
 (1, 'Apple iPhone 13 Pro Max', 'Apple',   '2021-11-23', 'available', NULL),
-(2, 'Apple MacBook Pro 13',    'Apple',   '2021-12-20', 'in_use',    NULL),
+(2, 'Apple MacBook Pro 13',    'Apple',   '2021-12-20', 'available', NULL),
 (3, 'Razer Basilisk V2',       'Razer',   '2021-06-05', 'repair',    NULL),
 (4, 'SAMSUNG Galaxy S21',      'Samsung', '2021-11-23', 'available', NULL),
 
@@ -49,7 +52,12 @@ INSERT INTO hardware (id, name, brand, purchase_date, status, description) VALUE
 (6, 'Logitech MX Master 3', 'Logitech', NULL, 'available',
     'Data quality: source purchase date "2027-10-10" rejected as future-dated.'),
 
-(7, 'Sony WH-1000XM4', 'Sony', '2022-01-12', 'in_use', NULL),
+-- [D-6] Source carried "assignedTo": "j.doe@booksy.com" here. The assignment
+-- is recorded in the description rather than as a rental, because a rental
+-- would need an account that can return it.
+(7, 'Sony WH-1000XM4', 'Sony', '2022-01-12', 'available',
+    'Data quality: source listed this as assigned to j.doe@booksy.com. '
+    || 'Seeded as available; re-issue through the app to create a real rental.'),
 
 -- [D-4] Corrections applied only where unambiguous: 'Appel' is a clear
 -- misspelling, and '22-05-2023' can only be DD-MM-YYYY since there is no
@@ -75,16 +83,5 @@ INSERT INTO hardware (id, name, brand, purchase_date, status, description) VALUE
 (12, 'Duplicate ID Test Laptop', 'Lenovo', '2023-01-01', 'repair',
      'Data quality: source record had duplicate id 4; reassigned to 12.');
 
--- --- Open rentals -------------------------------------------------------
---
--- [D-6] Every 'in_use' device MUST have an open rental row.
-
-INSERT INTO rentals (hardware_id, user_id, rented_at, returned_at) VALUES
-    -- Source gave "assignedTo": "j.doe@booksy.com".
-    (7, 1, '2022-01-12T09:00:00Z', NULL),
-    (2, 2, '2021-12-20T09:00:00Z', NULL);
-
 -- +goose Down
-DELETE FROM rentals  WHERE hardware_id IN (2, 7);
 DELETE FROM hardware WHERE id IN (1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12);
-DELETE FROM profiles WHERE id IN (1, 2);

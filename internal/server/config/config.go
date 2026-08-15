@@ -20,6 +20,8 @@ type Config struct {
 
 	CORSOrigins []string `env:"CORS_ORIGINS, default=*"`
 
+	RateLimitRPS float64 `env:"RATE_LIMIT_RPS, default=15"`
+
 	GooseTable string `env:"GOOSE_TABLE, default=goose_migrations"`
 
 	AdminEmail    string `env:"ADMIN_EMAIL, required"`
@@ -53,6 +55,9 @@ func LoadConfig(ctx context.Context) (*Config, error) {
 	}
 	if len(cfg.CORSOrigins) == 0 {
 		return nil, fmt.Errorf("CORS_ORIGINS must not be empty")
+	}
+	if cfg.RateLimitRPS <= 0 {
+		return nil, fmt.Errorf("RATE_LIMIT_RPS must be positive, got %v", cfg.RateLimitRPS)
 	}
 
 	return cfg, nil

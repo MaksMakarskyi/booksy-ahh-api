@@ -12,7 +12,7 @@ var (
 )
 
 type CreateProfileReq struct {
-	Email    string     `json:"email"     validate:"required,max=255,email"`
+	Email    string     `json:"email"     validate:"required,max=255,email,endswith=@booksy.com"`
 	Password string     `json:"password"  validate:"required,min=8,maxbytes=72,password"`
 	FullName string     `json:"full_name" validate:"required,min=2,max=255"`
 	Role     roles.Role `json:"role"      validate:"required,oneof=employee admin"`

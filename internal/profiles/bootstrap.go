@@ -11,7 +11,7 @@ import (
 )
 
 type adminCredentials struct {
-	Email    string `json:"ADMIN_EMAIL"    validate:"required,max=255,email"`
+	Email    string `json:"ADMIN_EMAIL"    validate:"required,max=255,email,endswith=@booksy.com"`
 	Password string `json:"ADMIN_PASSWORD" validate:"required,min=8,maxbytes=72,password"`
 	FullName string `json:"ADMIN_NAME"     validate:"required,min=2,max=255"`
 }

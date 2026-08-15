@@ -158,6 +158,8 @@ func message(fe validator.FieldError) string {
 		return "must be one of: " + strings.ReplaceAll(fe.Param(), " ", ", ")
 	case "email":
 		return "must be a valid email address"
+	case "endswith":
+		return fmt.Sprintf("must end with %s", fe.Param())
 	case "password":
 		return "must contain a lowercase letter, an uppercase letter, " +
 			"a digit and a special character"

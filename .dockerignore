@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+data
+*.db
+*.db-wal
+*.db-shm
+README.md
+Makefile
+docker-compose.yml

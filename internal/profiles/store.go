@@ -13,10 +13,7 @@ import (
 const (
 	profileColumns = "id, email, full_name, role, created_at, updated_at"
 
-	getAllQuery = `
-SELECT ` + profileColumns + `
-FROM profiles
-WHERE role = 'employee' OR id = $1`
+	getAllQuery = `SELECT ` + profileColumns + ` FROM profiles`
 
 	createQuery = `
 INSERT INTO profiles (email, full_name, role, password_hash)
@@ -36,7 +33,7 @@ RETURNING ` + profileColumns
 )
 
 type Store interface {
-	GetAll(ctx context.Context, userID int) ([]Profile, error)
+	GetAll(ctx context.Context) ([]Profile, error)
 	Create(ctx context.Context, record NewProfile) (Profile, error)
 	Delete(ctx context.Context, userID int, profileID int) (Profile, error)
 
@@ -64,9 +61,9 @@ func NewSQLiteStore(opts *SQLiteStoreOptions) (*SQLiteStore, error) {
 	return &SQLiteStore{client: opts.Client}, nil
 }
 
-func (s *SQLiteStore) GetAll(ctx context.Context, userID int) ([]Profile, error) {
+func (s *SQLiteStore) GetAll(ctx context.Context) ([]Profile, error) {
 	res := make([]Profile, 0)
-	if err := sqlscan.Select(ctx, s.client, &res, getAllQuery, userID); err != nil {
+	if err := sqlscan.Select(ctx, s.client, &res, getAllQuery); err != nil {
 		return nil, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
 	}
 
