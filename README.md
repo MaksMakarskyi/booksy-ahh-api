@@ -4,9 +4,9 @@ Internal tool for Booksy employees to manage, rent and maintain company equipmen
 
 This repository contains the **backend API**, written in Go with a SQLite database.
 
-- **Live demo Website:** `https://booksy-ahh.vercel.app/`
-- **Live demo API:** `https://booksy-ahh-api.fly.dev/`
-- **Frontend repository:** `https://github.com/MaksMakarskyi/booksy-ahh-website/`
+- **Live demo Website:** [`https://booksy-ahh.vercel.app/`](https://booksy-ahh.vercel.app/)
+- **Live demo API:** [`https://booksy-ahh-api.fly.dev/`](https://booksy-ahh-api.fly.dev/)
+- **Frontend repository:** [`https://github.com/MaksMakarskyi/booksy-ahh-website/`](https://github.com/MaksMakarskyi/booksy-ahh-website/)
 
 ## Table of contents
 
@@ -25,7 +25,7 @@ This repository contains the **backend API**, written in Go with a SQLite databa
 
 | Choice | Reason |
 | --- | --- |
-| **Go 1.26** | The task allows any language in which you are more productive. Go gives a single static binary, which makes deployment and review trivial. Moreover, Go is a compiled language, which gives some extra type safety for the application. Also, the language allows you to implement advanced concurrency patterns using goroutines and channels, which are features no other language gives us. Go brings other advantages as well, including smaller image size and better performance according to numerous articles and case studies written by employees from Big Tech companies that you can find on the internet. So, from my personal point of view, Go is a better choice for the long run to some extent than something like Python. Therefore, I decided to pick Go for this backend. |
+| **Go 1.26** | The task allows any language in which you are more productive. Go gives a single static binary, which makes deployment and review trivial. Moreover, Go is a compiled language, which gives some extra type safety for the application. Also, the language allows you to implement advanced concurrency patterns using goroutines and channels, which are features no other language gives us. Go brings other advantages as well, including smaller image size and better performance according to numerous articles and case studies written by employees from Big Tech companies that you can find on the internet. So, from my personal point of view, Go is a better choice for the long run to some extent than something like Python. |
 | **SQLite** (`modernc.org/sqlite`) | Suggested by the task. Pure-Go driver, so `CGO_ENABLED=0` produces a static binary with no libc dependency. SQLite was chosen mainly because it allows a seamless testing experience, though I would definitely pick something like Postgres for a real production app, since SQLite is quite limited. For example, it does not allow creating enumerators and stores dates as strings, which removes some database-level checks and may result in invalid DB states if a developer is not careful and does not ensure those checks at the application level. |
 | **goose** | Versioned SQL migrations, embedded into the binary so the app self-migrates on boot. |
 | **scany** | Maps SQL rows onto structs without an ORM. Queries stay hand-written and visible. |
