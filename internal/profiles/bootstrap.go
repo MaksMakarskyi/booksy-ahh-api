@@ -23,6 +23,9 @@ func EnsureAdmin(ctx context.Context, deps *dependencies.Registry) (bool, error)
 	if deps.Config == nil {
 		return false, fmt.Errorf("dependencies registry config cannot be nil")
 	}
+	if deps.Validator == nil {
+		return false, fmt.Errorf("dependencies registry validator cannot be nil")
+	}
 
 	credentials := adminCredentials{
 		Email:    strings.ToLower(strings.TrimSpace(deps.Config.AdminEmail)),

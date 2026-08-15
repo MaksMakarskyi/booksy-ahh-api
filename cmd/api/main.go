@@ -34,9 +34,9 @@ func main() {
 		log.Fatalf("failed to ensure admin profile: %v", err)
 	}
 	if created {
-		log.Printf("created admin profile for %s", cfg.AdminEmail)
+		log.Print("created admin profile")
 	} else {
-		log.Printf("admin profile for %s already exists, left unchanged", cfg.AdminEmail)
+		log.Print("admin profile already exists, left unchanged")
 	}
 
 	server, err := server.NewServer(deps)

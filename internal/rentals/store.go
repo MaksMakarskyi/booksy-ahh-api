@@ -178,8 +178,18 @@ func (s *SQLiteStore) Return(ctx context.Context, rentalID int, userID int) (Ren
 		return Rental{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
 	}
 
-	if _, err := tx.ExecContext(ctx, releaseHardwareQuery, rental.HardwareID); err != nil {
+	released, err := tx.ExecContext(ctx, releaseHardwareQuery, rental.HardwareID)
+	if err != nil {
 		return Rental{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
+	}
+	releasedRows, err := released.RowsAffected()
+	if err != nil {
+		return Rental{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
+	}
+	if releasedRows == 0 {
+		return Rental{}, fmt.Errorf(
+			"%w: hardware %d is not in use", errutils.ErrStoreConflict, rental.HardwareID,
+		)
 	}
 
 	if err := tx.Commit(); err != nil {
