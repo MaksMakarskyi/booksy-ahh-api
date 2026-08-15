@@ -1,35 +1,40 @@
-app = "booksy-ahh-api"
-primary_region = "fra"
+# fly.toml app configuration file generated for booksy-ahh-api on 2026-08-15T21:45:16Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'booksy-ahh-api'
+primary_region = 'fra'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  APP_ENV = "production"
-  PORT = "8080"
-  DATABASE_URL = "file:data/hardware-hub.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
-  ADMIN_EMAIL = "maksym.makarskyi@booksy.com"
-  ADMIN_NAME = "Maksym Makarskyi"
-  CORS_ORIGINS = "https://booksy-ahh.vercel.app"
+  ADMIN_EMAIL = 'maksym.makarskyi@booksy.com'
+  ADMIN_NAME = 'Maksym Makarskyi'
+  APP_ENV = 'production'
+  CORS_ORIGINS = 'https://booksy-ahh.vercel.app'
+  DATABASE_URL = 'file:data/hardware-hub.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)'
+  PORT = '8080'
 
-[mounts]
-  source = "hardware_hub_data"
-  destination = "/app/data"
+[[mounts]]
+  source = 'hardware_hub_data'
+  destination = '/app/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
-[[http_service.checks]]
-  method = "GET"
-  path = "/healthz"
-  interval = "30s"
-  timeout = "5s"
-  grace_period = "10s"
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/healthz'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
+  size = 'shared-cpu-1x'
+  memory = '256mb'
