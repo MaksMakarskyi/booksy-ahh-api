@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -100,6 +101,9 @@ func (aa *AdminAccounts) EnvDecode(val string) error {
 		return fmt.Errorf(
 			`ADMINS must be a JSON array of {"email","full_name","password"} objects: %w`, err,
 		)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf(`ADMINS must contain exactly one JSON array`)
 	}
 
 	*aa = accounts
