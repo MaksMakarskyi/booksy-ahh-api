@@ -9,6 +9,7 @@ import (
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/dependencies"
+	"github.com/MaksMakarskyi/booksy-go-api/internal/utils/migrate"
 )
 
 func main() {
@@ -21,13 +22,17 @@ func main() {
 
 	deps, err := dependencies.NewRegistry(ctx, cfg)
 	if err != nil {
-		log.Fatalf("failed to build dependecies: %v", err)
+		log.Fatalf("failed to build dependencies: %v", err)
 	}
 	defer func() {
 		if err := deps.Close(); err != nil {
-			log.Fatalf("failed to close dependecies: %v", err)
+			log.Printf("failed to close dependencies: %v", err)
 		}
 	}()
+
+	if err := migrate.Up(deps.DB, cfg.GooseTable); err != nil {
+		log.Fatalf("failed to apply migrations: %v", err)
+	}
 
 	created, err := profiles.EnsureAdmin(ctx, deps)
 	if err != nil {
@@ -39,13 +44,13 @@ func main() {
 		log.Print("admin profile already exists, left unchanged")
 	}
 
-	server, err := server.NewServer(deps)
+	srv, err := server.NewServer(deps)
 	if err != nil {
 		log.Fatalf("failed to create a server: %v", err)
 	}
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
-	if err := server.Start(addr); err != nil {
-		server.Logger.Error("failed to start server", "error", err)
+	if err := srv.Start(addr); err != nil {
+		srv.Logger.Error("failed to start server", "error", err)
 	}
 }

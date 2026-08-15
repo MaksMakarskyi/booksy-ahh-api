@@ -3,7 +3,6 @@ package profiles
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/MaksMakarskyi/booksy-go-api/internal/auth"
 	errutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/errors"
@@ -83,12 +82,9 @@ func (h *Handler) Delete(c *echo.Context) error {
 		return err
 	}
 
-	paramID := c.Param("id")
-	profileID, err := strconv.Atoi(paramID)
+	profileID, err := valutils.PathInt(c, "id")
 	if err != nil {
-		return echo.ErrBadRequest.Wrap(
-			fmt.Errorf("invalid 'id' path parameter: %s", paramID),
-		)
+		return err
 	}
 
 	deletedProfile, err := h.store.Delete(c.Request().Context(), user.ID, profileID)

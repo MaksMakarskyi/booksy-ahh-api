@@ -25,6 +25,15 @@ const (
 	Repair    HardwareStatus = "repair"
 )
 
+func (s HardwareStatus) IsValid() bool {
+	switch s {
+	case Available, InUse, Repair:
+		return true
+	default:
+		return false
+	}
+}
+
 var _ valutils.Normalizer = (*NewHardware)(nil)
 
 type NewHardware struct {

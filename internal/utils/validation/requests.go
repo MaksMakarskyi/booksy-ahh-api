@@ -3,6 +3,7 @@ package validation
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/labstack/echo/v5"
 )
@@ -33,4 +34,17 @@ func DecodeJSON[T any](c *echo.Context, v *T) error {
 	}
 
 	return nil
+}
+
+func PathInt(c *echo.Context, name string) (int, error) {
+	raw := c.Param(name)
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, echo.ErrBadRequest.Wrap(
+			fmt.Errorf("invalid %q path parameter: %s", name, raw),
+		)
+	}
+
+	return value, nil
 }

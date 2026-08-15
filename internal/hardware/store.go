@@ -35,6 +35,23 @@ RETURNING ` + hardwareColumns
 DELETE FROM hardware
 WHERE id = $1
 RETURNING ` + hardwareColumns
+
+	selectHardwareStatusQuery = `
+SELECT status
+FROM hardware
+WHERE id = $1`
+
+	markRepairQuery = `
+UPDATE hardware
+SET status = 'repair'
+WHERE id = $1 AND status = 'available'
+RETURNING ` + hardwareColumns
+
+	markAvailableQuery = `
+UPDATE hardware
+SET status = 'available'
+WHERE id = $1 AND status = 'repair'
+RETURNING ` + hardwareColumns
 )
 
 type Store interface {
@@ -42,6 +59,8 @@ type Store interface {
 	Create(ctx context.Context, newHardware NewHardware) (Hardware, error)
 	Update(ctx context.Context, updatedHardware UpdatedHardware) (Hardware, error)
 	Delete(ctx context.Context, hardwareID int) (Hardware, error)
+	MarkRepair(ctx context.Context, hardwareID int) (Hardware, error)
+	MarkAvailable(ctx context.Context, hardwareID int) (Hardware, error)
 }
 
 var _ Store = (*SQLiteStore)(nil)
@@ -115,6 +134,96 @@ func (s *SQLiteStore) Delete(ctx context.Context, hardwareID int) (Hardware, err
 		}
 
 		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
+	}
+
+	return res, nil
+}
+
+func (s *SQLiteStore) MarkRepair(ctx context.Context, hardwareID int) (Hardware, error) {
+	tx, err := s.client.BeginTx(ctx, nil)
+	if err != nil {
+		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreTxBegin, err)
+	}
+	defer tx.Rollback()
+
+	var status string
+	if err := sqlscan.Get(ctx, tx, &status, selectHardwareStatusQuery, hardwareID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Hardware{}, fmt.Errorf("hardware %d: %w", hardwareID, errutils.ErrStoreNotFound)
+		}
+
+		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
+	}
+
+	hardwareStatus := HardwareStatus(status)
+	if !hardwareStatus.IsValid() {
+		return Hardware{}, fmt.Errorf(
+			"%w: hardware %d has invalid status: %q",
+			errutils.ErrStoreInternal, hardwareID, hardwareStatus,
+		)
+	}
+	if hardwareStatus != Available {
+		return Hardware{}, fmt.Errorf(
+			"%w: hardware %d is %s", errutils.ErrStoreConflict, hardwareID, status,
+		)
+	}
+
+	var res Hardware
+	if err := sqlscan.Get(ctx, tx, &res, markRepairQuery, hardwareID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Hardware{}, fmt.Errorf("hardware %d: %w", hardwareID, errutils.ErrStoreNotFound)
+		}
+
+		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreTxCommit, err)
+	}
+
+	return res, nil
+}
+
+func (s *SQLiteStore) MarkAvailable(ctx context.Context, hardwareID int) (Hardware, error) {
+	tx, err := s.client.BeginTx(ctx, nil)
+	if err != nil {
+		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreTxBegin, err)
+	}
+	defer tx.Rollback()
+
+	var status string
+	if err := sqlscan.Get(ctx, tx, &status, selectHardwareStatusQuery, hardwareID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Hardware{}, fmt.Errorf("hardware %d: %w", hardwareID, errutils.ErrStoreNotFound)
+		}
+
+		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
+	}
+
+	hardwareStatus := HardwareStatus(status)
+	if !hardwareStatus.IsValid() {
+		return Hardware{}, fmt.Errorf(
+			"%w: hardware %d has invalid status: %q",
+			errutils.ErrStoreInternal, hardwareID, hardwareStatus,
+		)
+	}
+	if hardwareStatus != Repair {
+		return Hardware{}, fmt.Errorf(
+			"%w: hardware %d is %s", errutils.ErrStoreConflict, hardwareID, status,
+		)
+	}
+
+	var res Hardware
+	if err := sqlscan.Get(ctx, tx, &res, markAvailableQuery, hardwareID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Hardware{}, fmt.Errorf("hardware %d: %w", hardwareID, errutils.ErrStoreNotFound)
+		}
+
+		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreInternal, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Hardware{}, fmt.Errorf("%w: %w", errutils.ErrStoreTxCommit, err)
 	}
 
 	return res, nil

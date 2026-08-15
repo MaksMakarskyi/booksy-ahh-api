@@ -18,6 +18,10 @@ type Config struct {
 	JWTSecret string        `env:"JWT_SECRET, required"`
 	JWTTTL    time.Duration `env:"JWT_TTL, default=12h"`
 
+	CORSOrigins []string `env:"CORS_ORIGINS, default=*"`
+
+	GooseTable string `env:"GOOSE_TABLE, default=goose_migrations"`
+
 	AdminEmail    string `env:"ADMIN_EMAIL, required"`
 	AdminPassword string `env:"ADMIN_PASSWORD, required"`
 	AdminName     string `env:"ADMIN_NAME, default=Administrator"`
@@ -47,6 +51,9 @@ func LoadConfig(ctx context.Context) (*Config, error) {
 	if cfg.JWTTTL <= 0 {
 		return nil, fmt.Errorf("JWT_TTL must be positive, got %s", cfg.JWTTTL)
 	}
+	if len(cfg.CORSOrigins) == 0 {
+		return nil, fmt.Errorf("CORS_ORIGINS must not be empty")
+	}
 
 	return cfg, nil
 }
@@ -58,12 +65,11 @@ const (
 	Production  AppEnv = "production"
 )
 
-var validAppEnvs = map[AppEnv]struct{}{
-	Development: {},
-	Production:  {},
-}
-
 func (ae AppEnv) IsValid() bool {
-	_, ok := validAppEnvs[ae]
-	return ok
+	switch ae {
+	case Development, Production:
+		return true
+	default:
+		return false
+	}
 }

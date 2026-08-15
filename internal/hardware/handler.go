@@ -3,7 +3,6 @@ package hardware
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 
 	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
 	"github.com/labstack/echo/v5"
@@ -33,13 +32,13 @@ func NewHandler(opts *HandlerOptions) (*Handler, error) {
 }
 
 func (h *Handler) GetAll(c *echo.Context) error {
-	hardwares, err := h.store.GetAll(c.Request().Context())
+	items, err := h.store.GetAll(c.Request().Context())
 	if err != nil {
-		return fmt.Errorf("failed to get all harware items: %w", err)
+		return fmt.Errorf("failed to get all hardware items: %w", err)
 	}
 
 	return c.JSON(http.StatusOK, map[string][]Hardware{
-		"data": hardwares,
+		"data": items,
 	})
 }
 
@@ -51,7 +50,7 @@ func (h *Handler) Create(c *echo.Context) error {
 
 	storedHardware, err := h.store.Create(c.Request().Context(), newHardware)
 	if err != nil {
-		return fmt.Errorf("failed to store harware: %w", err)
+		return fmt.Errorf("failed to store hardware: %w", err)
 	}
 
 	return c.JSON(http.StatusCreated, map[string]Hardware{
@@ -67,7 +66,7 @@ func (h *Handler) Update(c *echo.Context) error {
 
 	storedHardware, err := h.store.Update(c.Request().Context(), updatedHardware)
 	if err != nil {
-		return fmt.Errorf("failed to update harware %d: %w", updatedHardware.ID, err)
+		return fmt.Errorf("failed to update hardware %d: %w", updatedHardware.ID, err)
 	}
 
 	return c.JSON(http.StatusOK, map[string]Hardware{
@@ -76,20 +75,49 @@ func (h *Handler) Update(c *echo.Context) error {
 }
 
 func (h *Handler) Delete(c *echo.Context) error {
-	paramID := c.Param("id")
-	hardwareID, err := strconv.Atoi(paramID)
+	hardwareID, err := valutils.PathInt(c, "id")
 	if err != nil {
-		return echo.ErrBadRequest.Wrap(
-			fmt.Errorf("invalid 'id' path parameter: %s", paramID),
-		)
+		return err
 	}
 
 	deletedHardware, err := h.store.Delete(c.Request().Context(), hardwareID)
 	if err != nil {
-		return fmt.Errorf("failed to delete harware %d: %w", hardwareID, err)
+		return fmt.Errorf("failed to delete hardware %d: %w", hardwareID, err)
 	}
 
 	return c.JSON(http.StatusOK, map[string]Hardware{
 		"data": deletedHardware,
+	})
+}
+
+func (h *Handler) MarkRepair(c *echo.Context) error {
+	hardwareID, err := valutils.PathInt(c, "id")
+	if err != nil {
+		return err
+	}
+
+	markedRepairHardware, err := h.store.MarkRepair(c.Request().Context(), hardwareID)
+	if err != nil {
+		return fmt.Errorf("failed to mark repair hardware %d: %w", hardwareID, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]Hardware{
+		"data": markedRepairHardware,
+	})
+}
+
+func (h *Handler) MarkAvailable(c *echo.Context) error {
+	hardwareID, err := valutils.PathInt(c, "id")
+	if err != nil {
+		return err
+	}
+
+	markedAvailableHardware, err := h.store.MarkAvailable(c.Request().Context(), hardwareID)
+	if err != nil {
+		return fmt.Errorf("failed to mark available hardware %d: %w", hardwareID, err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]Hardware{
+		"data": markedAvailableHardware,
 	})
 }

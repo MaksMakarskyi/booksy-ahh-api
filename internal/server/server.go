@@ -72,6 +72,8 @@ func NewServer(deps *dependencies.Registry) (*echo.Echo, error) {
 	hardwareGroup.POST("", hardwareHandler.Create, adminMiddleware)
 	hardwareGroup.PATCH("/:id", hardwareHandler.Update, adminMiddleware)
 	hardwareGroup.DELETE("/:id", hardwareHandler.Delete, adminMiddleware)
+	hardwareGroup.PATCH("/:id/repair", hardwareHandler.MarkRepair, adminMiddleware)
+	hardwareGroup.PATCH("/:id/available", hardwareHandler.MarkAvailable, adminMiddleware)
 
 	rentalGroup := server.Group("/rentals", authMiddleware)
 	rentalGroup.GET("", rentalHandler.GetAll)

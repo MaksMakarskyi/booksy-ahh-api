@@ -3,7 +3,6 @@ package rentals
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/MaksMakarskyi/booksy-go-api/internal/auth"
 	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
@@ -74,12 +73,9 @@ func (h *Handler) Return(c *echo.Context) error {
 		return err
 	}
 
-	paramID := c.Param("id")
-	rentalID, err := strconv.Atoi(paramID)
+	rentalID, err := valutils.PathInt(c, "id")
 	if err != nil {
-		return echo.ErrBadRequest.Wrap(
-			fmt.Errorf("invalid 'id' path parameter: %s", paramID),
-		)
+		return err
 	}
 
 	rental, err := h.store.Return(c.Request().Context(), rentalID, user.ID)

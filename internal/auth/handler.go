@@ -71,7 +71,7 @@ func (h *Handler) CreateToken(c *echo.Context) error {
 		return fmt.Errorf("failed to issue token: %w", err)
 	}
 
-	return c.JSON(http.StatusCreated, map[string]any{
+	return c.JSON(http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"access_token": token,
 			"token_type":   "Bearer",
