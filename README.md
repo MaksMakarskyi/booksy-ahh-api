@@ -4,8 +4,9 @@ Internal tool for Booksy employees to manage, rent and maintain company equipmen
 
 This repository contains the **backend API**, written in Go with a SQLite database.
 
-- **Live demo:** `<DEPLOYMENT_URL>` *(to be filled after deployment)*
-- **Frontend repository:** `<FRONTEND_REPO_URL>` *(to be filled)*
+- **Live demo Website:** `https://booksy-ahh.vercel.app/`
+- **Live demo API:** `https://booksy-ahh-api.fly.dev/`
+- **Frontend repository:** `https://github.com/MaksMakarskyi/booksy-ahh-website/`
 
 ## Table of contents
 
@@ -296,7 +297,6 @@ updated_at                  created_at
 - **PATCH cannot clear a nullable field.** `*string` cannot distinguish "absent" from "explicit null" — both decode to `nil`, and `COALESCE` reads `nil` as "keep". So `description` can be set and changed, never removed. Fixing it needs an `Optional[T]` wrapper that records key presence.
 - **No pagination.** Deliberate, per shortcut 1.
 - **Deleting an admin answers `404`, not `403`.** `GET /profiles` returns every account, so the client can see admin rows it is not allowed to remove. The delete query matches `role = 'employee'`, and a statement that matches nothing is indistinguishable from a missing row, so the honest "you may not delete an admin" is reported as "no such profile". The fix is to look the row up before deleting and return a dedicated error; it is a status-code wart, not a security hole.
-- **Frontend.** Lives in a separate repository *(link to be added)*.
 
 ### 🔮 Next steps — the 24-hour roadmap
 
