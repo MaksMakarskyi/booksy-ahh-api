@@ -22,6 +22,13 @@ type Config struct {
 
 	CORSOrigins []string `env:"CORS_ORIGINS, default=*"`
 
+	OpenAIApiKey          string `env:"OPENAI_API_KEY, required"`
+	OpenAIEmbeddingsModel string `env:"OPENAI_EMBEDDINGS_MODEL, default=text-embedding-3-small"`
+
+	EmbeddingsModelDim int64 `env:"EMBEDDINGS_MODEL_DIM, default=1536"`
+
+	SearchTopK int `env:"SEARCH_TOP_K, default=5"`
+
 	RateLimitRPS float64 `env:"RATE_LIMIT_RPS, default=15"`
 
 	GooseTable string `env:"GOOSE_TABLE, default=goose_migrations"`
@@ -55,6 +62,12 @@ func LoadConfig(ctx context.Context) (*Config, error) {
 	}
 	if len(cfg.CORSOrigins) == 0 {
 		return nil, fmt.Errorf("CORS_ORIGINS must not be empty")
+	}
+	if cfg.EmbeddingsModelDim <= 0 {
+		return nil, fmt.Errorf("EMBEDDINGS_MODEL_DIM must be positive, got %d", cfg.EmbeddingsModelDim)
+	}
+	if cfg.SearchTopK <= 0 {
+		return nil, fmt.Errorf("SEARCH_TOP_K must be positive, got %d", cfg.SearchTopK)
 	}
 	if cfg.RateLimitRPS <= 0 {
 		return nil, fmt.Errorf("RATE_LIMIT_RPS must be positive, got %v", cfg.RateLimitRPS)

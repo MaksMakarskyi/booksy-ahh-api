@@ -2,7 +2,10 @@ package tests
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
+
+	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
 )
 
 func TestSeededInventory(t *testing.T) {
@@ -308,5 +311,133 @@ func TestRentedHardwareCannotGoToRepair(t *testing.T) {
 	status, body := a.call(a.admin, "PATCH", fmt.Sprintf("/hardware/%d/repair", id), "")
 	if status != 409 {
 		t.Errorf("status = %d, want 409 (%s)", status, body)
+	}
+}
+
+func TestSearchRequiresAQuery(t *testing.T) {
+	a := newAPI(t)
+
+	tests := []struct {
+		name, path string
+		want       int
+	}{
+		{"missing query", "/hardware/search", 400},
+		{"empty query", "/hardware/search?query=", 400},
+		{"whitespace only", "/hardware/search?query=%20%20", 400},
+		{"valid query", "/hardware/search?query=laptop", 200},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, body := a.call(a.admin, "GET", tt.path, "")
+			if status != tt.want {
+				t.Errorf("status = %d, want %d (%s)", status, tt.want, body)
+			}
+		})
+	}
+}
+
+func TestSearchReturnsAtMostTopK(t *testing.T) {
+	a := newAPI(t)
+
+	status, body := a.call(a.admin, "GET", "/hardware/search?query=apple+laptop", "")
+	if status != 200 {
+		t.Fatalf("status = %d, want 200 (%s)", status, body)
+	}
+
+	if got := count(t, body, "data"); got != 5 {
+		t.Errorf("got %d results, want the top 5 of 11 seeded devices", got)
+	}
+	if field(t, body, "data.0.name") == nil {
+		t.Errorf("results are not hardware objects: %s", body)
+	}
+}
+
+func TestSearchDoesNotLeakVectors(t *testing.T) {
+	a := newAPI(t)
+
+	_, body := a.call(a.admin, "GET", "/hardware/search?query=phone", "")
+
+	for _, key := range []string{"vector", "Vector", "model", "Model", "embedding"} {
+		if field(t, body, "data.0."+key) != nil {
+			t.Errorf("response leaked %q: %s", key, body)
+		}
+	}
+}
+
+func TestSearchIsAvailableToEmployees(t *testing.T) {
+	a := newAPI(t)
+	employee, _ := a.employee("searcher@booksy.com")
+
+	if status, body := a.call(employee, "GET", "/hardware/search?query=mouse", ""); status != 200 {
+		t.Errorf("status = %d, want 200 (%s)", status, body)
+	}
+	if status, body := a.call("", "GET", "/hardware/search?query=mouse", ""); status != 401 {
+		t.Errorf("anonymous: status = %d, want 401 (%s)", status, body)
+	}
+}
+
+func TestNewHardwareBecomesSearchable(t *testing.T) {
+	a := newAPI(t, func(c *config.Config) { c.SearchTopK = 50 })
+
+	id := a.device("Thinkpad X1 Carbon")
+
+	_, body := a.call(a.admin, "GET", "/hardware/search?query=thinkpad", "")
+	found := false
+	for i := range count(t, body, "data") {
+		if field(t, body, fmt.Sprintf("data.%d.id", i)) == id {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("device %d is not in the candidate set: %s", id, body)
+	}
+}
+
+// Searching for a device's own text must put that device first. The fake
+// embedder is character-frequency based, so an exact-text query is the closest
+// possible vector to that device and nothing else can outrank it.
+func TestSearchRanksTheClosestMatchFirst(t *testing.T) {
+	a := newAPI(t)
+
+	const name = "Zzyzx Quantum Widget"
+	id := a.device(name)
+
+	status, body := a.call(a.admin, "GET", "/hardware/search?query="+url.QueryEscape(name+" TestCo"), "")
+	if status != 200 {
+		t.Fatalf("status = %d, want 200 (%s)", status, body)
+	}
+
+	if got := field(t, body, "data.0.id"); got != id {
+		t.Errorf("top match is %v (%v), want device %d",
+			got, field(t, body, "data.0.name"), id)
+	}
+}
+
+// The order has to depend on the query, not be fixed: searching each device's
+// own text must put that device on top, so two different queries produce two
+// different winners from the same candidate set.
+func TestSearchOrderDependsOnTheQuery(t *testing.T) {
+	a := newAPI(t)
+
+	first := a.device("Xylophone Zephyr Quokka")
+	second := a.device("Jubilant Waffle Machine")
+
+	for _, tt := range []struct {
+		query string
+		want  int
+	}{
+		{"Xylophone Zephyr Quokka TestCo", first},
+		{"Jubilant Waffle Machine TestCo", second},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			_, body := a.call(a.admin, "GET",
+				"/hardware/search?query="+url.QueryEscape(tt.query), "")
+
+			if got := field(t, body, "data.0.id"); got != tt.want {
+				t.Errorf("top match is %v (%v), want device %d",
+					got, field(t, body, "data.0.name"), tt.want)
+			}
+		})
 	}
 }

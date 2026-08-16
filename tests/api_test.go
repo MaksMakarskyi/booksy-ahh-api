@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MaksMakarskyi/booksy-go-api/internal/hardware"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/profiles"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
@@ -39,14 +40,18 @@ func newAPI(t *testing.T, tweak ...func(*config.Config)) *api {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 
 	cfg := &config.Config{
-		Env:          config.Production,
-		Port:         "0",
-		DatabaseUrl:  "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)",
-		JWTSecret:    "test-jwt-secret-with-at-least-32-bytes",
-		JWTTTL:       time.Hour,
-		CORSOrigins:  []string{"*"},
-		RateLimitRPS: 10_000,
-		GooseTable:   "goose_migrations",
+		Env:                   config.Production,
+		Port:                  "0",
+		DatabaseUrl:           "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)",
+		JWTSecret:             "test-jwt-secret-with-at-least-32-bytes",
+		JWTTTL:                time.Hour,
+		CORSOrigins:           []string{"*"},
+		RateLimitRPS:          10_000,
+		GooseTable:            "goose_migrations",
+		OpenAIApiKey:          "test-key-never-used",
+		OpenAIEmbeddingsModel: fakeEmbeddingModel,
+		EmbeddingsModelDim:    fakeEmbeddingDims,
+		SearchTopK:            5,
 		Admins: config.AdminAccounts{
 			{Email: adminEmail, Password: adminPassword, FullName: "Test Admin"},
 		},
@@ -59,6 +64,8 @@ func newAPI(t *testing.T, tweak ...func(*config.Config)) *api {
 	if err != nil {
 		t.Fatalf("build dependencies: %v", err)
 	}
+
+	deps.Embedder = fakeEmbedder{}
 	t.Cleanup(func() {
 		_ = deps.Close()
 	})
@@ -68,6 +75,9 @@ func newAPI(t *testing.T, tweak ...func(*config.Config)) *api {
 	}
 	if _, err := profiles.EnsureAdmins(ctx, deps); err != nil {
 		t.Fatalf("ensure admins: %v", err)
+	}
+	if _, err := hardware.EnsureEmbeddings(ctx, deps); err != nil {
+		t.Fatalf("ensure embeddings: %v", err)
 	}
 
 	handler, err := server.NewServer(deps)
@@ -189,4 +199,41 @@ func count(t *testing.T, body, path string) int {
 	}
 
 	return len(items)
+}
+
+const (
+	fakeEmbeddingModel = "fake-embedding-model"
+	fakeEmbeddingDims  = 8
+)
+
+type fakeEmbedder struct{}
+
+func (fakeEmbedder) Model() string { return fakeEmbeddingModel }
+
+func (fakeEmbedder) Dimensions() int { return fakeEmbeddingDims }
+
+func (fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
+	vector := make([]float32, fakeEmbeddingDims)
+	for _, r := range strings.ToLower(text) {
+		if r >= 'a' && r <= 'z' {
+			vector[int(r-'a')%fakeEmbeddingDims]++
+		}
+	}
+
+	var sum float64
+	for _, v := range vector {
+		sum += float64(v) * float64(v)
+	}
+	if sum == 0 {
+		vector[0] = 1
+
+		return vector, nil
+	}
+
+	norm := math.Sqrt(sum)
+	for i, v := range vector {
+		vector[i] = float32(float64(v) / norm)
+	}
+
+	return vector, nil
 }

@@ -2,9 +2,9 @@
 
 The prompts that shaped the architecture of Hardware Hub, in the order they were sent.
 
-**Tool:** Claude Code (Opus 5) · **Sessions:** 11–15 August 2026 · **41 prompts**
+**Tool:** Claude Code (Opus 5) · **Sessions:** 11–16 August 2026 · **56 prompts**
 
-This is a curated trail, not a transcript dump. The full export runs to ~2,400 JSONL records — mostly tool calls, file diffs and local environment values — and burying nine architectural decisions inside it would hide them rather than show them. So below: the twelve prompts that actually changed the shape of the system, each with what it settled, followed by a complete index of all 41 so nothing is concealed.
+This is a curated trail, not a transcript dump. The full export runs to ~2,400 JSONL records — mostly tool calls, file diffs and local environment values — and burying the architectural decisions inside it would hide them rather than show them. So below: the sixteen prompts that actually changed the shape of the system, each with what it settled, followed by a complete index of all 56 so nothing is concealed.
 
 Prompts are verbatim, including typos. Long ones are trimmed with `[…]`.
 
@@ -108,7 +108,7 @@ Question 2 corrected a misconception: bcrypt takes **no** application secret at 
 
 ## Complete index
 
-Every prompt in the session, in order. The twelve quoted above are marked ★ — they are numbered 1–12 in their own sections, so the numbers in this table do not match them.
+Every prompt in the session, in order. The sixteen quoted above are marked ★ — they are numbered 1–16 in their own sections, so the numbers in this table do not match them.
 
 | # | Date | Prompt |
 | --- | --- | --- |
@@ -153,6 +153,21 @@ Every prompt in the session, in order. The twelve quoted above are marked ★ �
 | 39 ★ | 15 Aug | Handler tests; clean the seed; `@booksy.com` only; redeploy question; is a JSON export enough for the AI log? |
 | 40 ★ | 15 Aug | Simplify the tests into readable table tests |
 | 41 | 15 Aug | Reconcile the README with the latest changes |
+| 42 | 15 Aug | Write the prompt trail the task asks for |
+| 43 | 16 Aug | Load several admins at the bootstrap stage |
+| 44 | 16 Aug | Is `docker-entrypoint.sh` needed, and what is it for? |
+| 45 ★ | 16 Aug | Let users clear a description or purchase date; the decoder isn't distinguishing empty from absent |
+| 46 ★ | 16 Aug | Was making description and purchase date non-nullable a good idea? |
+| 47 | 16 Aug | Re-check every change and fix whatever the README now gets wrong |
+| 48 ★ | 16 Aug | Does SQLite have a pgvector equivalent? Feedback on the other AI options |
+| 49 ★ | 16 Aug | The semantic-search design, in four points |
+| 50 | 16 Aug | Review the embedder, revise the store interface, finish the handlers |
+| 51 ★ | 16 Aug | Is `embedInBackground` actually asynchronous? |
+| 52 | 16 Aug | Review the sort function; fix the iterator error in Search |
+| 53 | 16 Aug | Review the ranking optimisation; fix the failing tests |
+| 54 | 16 Aug | Write real descriptions for the seed devices |
+| 55 ★ | 16 Aug | Shouldn't those search results be better? |
+| 56 | 16 Aug | Double the descriptions; condense the README and prompt trail |
 
 ## What the trail shows
 

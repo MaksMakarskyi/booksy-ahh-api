@@ -20,7 +20,9 @@ func Build(deps *dependencies.Registry) (*Handler, error) {
 	}
 
 	handler, err := NewHandler(&HandlerOptions{
-		Store: store,
+		Store:      store,
+		Embedder:   deps.Embedder,
+		SearchTopK: deps.Config.SearchTopK,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to build handler: %w", err)

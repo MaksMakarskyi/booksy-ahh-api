@@ -6,17 +6,22 @@ import (
 	"fmt"
 
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
+	"github.com/MaksMakarskyi/booksy-go-api/internal/utils/embeddings"
 	errutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/errors"
 	jwtutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/jwt"
 	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
 	"github.com/labstack/echo/v5"
+	"github.com/openai/openai-go/v3"
+	openaioption "github.com/openai/openai-go/v3/option"
 )
 
 type Registry struct {
 	// Main dependencies
-	DB        *sql.DB
-	JWTIssuer *jwtutils.Issuer
-	Config    *config.Config
+	DB           *sql.DB
+	OpenAIClient *openai.Client
+	Embedder     embeddings.Embedder
+	JWTIssuer    *jwtutils.Issuer
+	Config       *config.Config
 
 	// Echo dependencies
 	Validator      echo.Validator
@@ -36,6 +41,17 @@ func NewRegistry(ctx context.Context, cfg *config.Config) (*Registry, error) {
 
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+
+	openAIClient := openai.NewClient(openaioption.WithAPIKey(cfg.OpenAIApiKey))
+
+	embedder, err := embeddings.NewOpenAIEmbedder(&embeddings.OpenAIEmbedderOptions{
+		Client:     &openAIClient,
+		Model:      cfg.OpenAIEmbeddingsModel,
+		Dimensions: cfg.EmbeddingsModelDim,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build embedder: %w", err)
+	}
 
 	jwtIssuer, err := jwtutils.NewIssuer(&jwtutils.IssuerOptions{
 		Secret: cfg.JWTSecret,
@@ -57,9 +73,11 @@ func NewRegistry(ctx context.Context, cfg *config.Config) (*Registry, error) {
 
 	// Registry
 	registry := Registry{
-		DB:        db,
-		JWTIssuer: jwtIssuer,
-		Config:    cfg,
+		DB:           db,
+		OpenAIClient: &openAIClient,
+		Embedder:     embedder,
+		JWTIssuer:    jwtIssuer,
+		Config:       cfg,
 
 		Validator:      val,
 		ErrorHandler:   errorHandler,

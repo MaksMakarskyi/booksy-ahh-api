@@ -1,319 +1,210 @@
 # Hardware Hub — API
 
-Internal tool for Booksy employees to manage, rent and maintain company equipment.
+Internal tool for Booksy employees to manage, rent and maintain company equipment. This is the **backend**: Go, SQLite, and semantic search over the inventory.
 
-This repository contains the **backend API**, written in Go with a SQLite database.
+- **Live demo:** [booksy-ahh.vercel.app](https://booksy-ahh.vercel.app/) 
+- **API:** [booksy-ahh-api.fly.dev](https://booksy-ahh-api.fly.dev/)
+- **Frontend repository:** [https://github.com/MaksMakarskyi/booksy-ahh-website](https://github.com/MaksMakarskyi/booksy-ahh-website)
 
-- **Live demo Website:** [`https://booksy-ahh.vercel.app/`](https://booksy-ahh.vercel.app/)
-- **Live demo API:** [`https://booksy-ahh-api.fly.dev/`](https://booksy-ahh-api.fly.dev/)
-- **Frontend repository:** [`https://github.com/MaksMakarskyi/booksy-ahh-website/`](https://github.com/MaksMakarskyi/booksy-ahh-website/)
-
-## Table of contents
-
-- [Stack and why](#stack-and-why)
-- [Quick start](#quick-start)
-- [Configuration](#configuration)
-- [API reference](#api-reference)
-- [Architecture](#architecture)
-- [Data model](#data-model)
-- [Implementation status and trade-offs](#implementation-status-and-trade-offs)
-- [Testing](#testing)
-- [The AI development log](#the-ai-development-log)
-- [Deployment](#deployment)
+| | |
+| --- | --- |
+| **Read this first** | [Stack](#stack-and-why) · [Run it](#quick-start) · [API](#api-reference) · [Semantic search](#semantic-search-the-ai-layer) |
+| **The graded parts** | [Status & trade-offs](#implementation-status-and-trade-offs) · [AI development log](#the-ai-development-log) · [PROMPTS.md](PROMPTS.md) |
 
 ## Stack and why
 
 | Choice | Reason |
 | --- | --- |
-| **Go 1.26** | The task allows any language in which you are more productive. Go gives a single static binary, which makes deployment and review trivial. Moreover, Go is a compiled language, which gives some extra type safety for the application. Also, the language allows you to implement advanced concurrency patterns using goroutines and channels, which are features no other language gives us. Go brings other advantages as well, including smaller image size and better performance according to numerous articles and case studies written by employees from Big Tech companies that you can find on the internet. So, from my personal point of view, Go is a better choice for the long run to some extent than something like Python. |
-| **SQLite** (`modernc.org/sqlite`) | Suggested by the task. Pure-Go driver, so `CGO_ENABLED=0` produces a static binary with no libc dependency. SQLite was chosen mainly because it allows a seamless testing experience, though I would definitely pick something like Postgres for a real production app, since SQLite is quite limited. For example, it does not allow creating enumerators and stores dates as strings, which removes some database-level checks and may result in invalid DB states if a developer is not careful and does not ensure those checks at the application level. |
-| **goose** | Versioned SQL migrations, embedded into the binary so the app self-migrates on boot. |
-| **scany** | Maps SQL rows onto structs without an ORM. Queries stay hand-written and visible. |
-| **go-playground/validator** | Declarative request validation, extended with three custom rules. |
+| **Go 1.26** | The task allows any language I'm more productive in. A single static binary makes deployment and review trivial, the compiler catches a class of mistakes before they run, and the performance and image-size story is better than Python's for the long run. My own preference, chosen deliberately over the suggested stack. |
+| **SQLite** (`modernc.org/sqlite`) | Suggested by the task, and it makes review and testing frictionless — no database to install, a fresh one per test. Pure-Go driver, so `CGO_ENABLED=0` yields a static binary. For real production I would pick Postgres: SQLite has no `ENUM`, no date type, and foreign keys off by default, which pushes correctness up into application code. |
+| **goose** | Versioned SQL migrations, embedded in the binary so the app self-migrates on boot. |
+| **scany** | Maps rows onto structs without an ORM. Queries stay hand-written and visible. |
+| **go-playground/validator** | Declarative request validation, extended with four custom rules. |
 | **bcrypt** + **golang-jwt/v5** | Password hashing and HS256 access tokens. |
-| **Fly.io** (deployment) | A container platform with first-class persistent volumes, which is what SQLite needs: one machine, one writer, a real filesystem. It also terminates TLS on `*.fly.dev` automatically — required, because the frontend is served over HTTPS and a browser will not let an HTTPS page call an HTTP API. GCP Compute Engine was the alternative and would work equally well, but it needs a reverse proxy and a domain to obtain a certificate; Cloud Run was rejected because its disk is ephemeral. |
+| **OpenAI `text-embedding-3-small`** | Vectors for semantic search. SQLite has no pgvector equivalent that works here — `sqlite-vec` is a C extension and needs CGO, which would cost the static binary. At this inventory size an index is pointless anyway: brute-force cosine over 11 vectors takes ~25µs. |
+| **Fly.io** | SQLite needs one machine, one writer, a real filesystem — so a persistent volume, which Fly gives without a VM to maintain. It also terminates TLS automatically, required because an HTTPS frontend cannot call an HTTP API. Compute Engine would work but needs a reverse proxy and a domain; Cloud Run was rejected outright — its disk is ephemeral. |
 
 ## Quick start
 
-### Option A — Docker (recommended for review)
-
 ```bash
-cp .env.example .env     # then fill in the values, see Configuration
-make compose
+cp .env.example .env     # fill in ADMINS, JWT_SECRET, OPENAI_API_KEY
+make compose             # or: make run
 ```
 
-The API is available on `http://localhost:8080`.
-
-The container is self-sufficient: migrations are **embedded in the binary** and applied at startup, and the admin accounts listed in `ADMINS` are created if they are absent. No manual migration step, no seeding step.
-
-### Option B — local Go toolchain
+API on `http://localhost:8080`. The container is self-sufficient — migrations are embedded and applied at boot, admins are created from `ADMINS`, and the inventory is embedded for search. No manual migration or seeding step.
 
 ```bash
-cp .env.example .env     # then fill in the values
-make run
-```
-
-Requires Go 1.26+. Nothing else — no database server to install.
-
-### Verify it works
-
-```bash
-curl -s localhost:8080/healthz
-
-TOKEN=$(curl -s -X POST localhost:8080/auth/token \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"<ADMIN_EMAIL_FROM_ADMINS>","password":"<ITS_PASSWORD>"}' \
-  | jq -r .data.access_token)
+TOKEN=$(curl -s -X POST localhost:8080/auth/token -H 'Content-Type: application/json' \
+  -d '{"email":"you@booksy.com","password":"..."}' | jq -r .data.access_token)
 
 curl -s localhost:8080/hardware -H "Authorization: Bearer $TOKEN" | jq
+curl -s -G localhost:8080/hardware/search --data-urlencode 'query=something to test a mobile app on' \
+  -H "Authorization: Bearer $TOKEN" | jq '.data[].name'
 ```
 
-### Make targets
-
-| Target | Description |
-| --- | --- |
-| `make run` | Run the API locally |
-| `make test` | Run the test suite |
-| `make format` | `go fmt ./...` |
-| `make tidy` | `go mod tidy` |
-| `make compose` | Build and run in Docker |
-| `make migrate` | Apply migrations with the goose CLI |
-| `make migrate-down` | Roll back one migration |
-| `make migrate-status` | Show applied migrations |
-| `make migrate-reset` | Drop everything and re-apply (destroys data) |
-
-The `make migrate*` targets exist for development. In normal operation the binary migrates itself.
+**Make targets:** `run` · `test` · `compose` · `format` · `tidy` · `migrate` / `migrate-down` / `migrate-status` / `migrate-reset` (development only — the binary migrates itself).
 
 ## Configuration
 
-All configuration is environment variables. `.env` is loaded by `make` targets and by Docker Compose; in production the values come from the environment directly. See `.env.example`.
+All configuration is environment variables; `.env` is loaded by `make` and Docker Compose. See `.env.example`.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `APP_ENV` | no | `production` | `development` \| `production`. Controls CORS and whether errors carry a `debug` field. |
-| `PORT` | no | `8080` | |
-| `DATABASE_URL` | **yes** | — | SQLite DSN. The pragmas are not optional, see below. |
-| `JWT_SECRET` | **yes** | — | HS256 signing key. Rejected at startup if under 32 bytes. |
-| `JWT_TTL` | no | `12h` | Access token lifetime. |
-| `CORS_ORIGINS` | no | `*` | Comma-separated. Set to the frontend origin in production. |
-| `RATE_LIMIT_RPS` | no | `15` | Requests per second per IP, across all routes. |
-| `ADMINS` | **yes** | — | JSON array of admin accounts, created at startup. See below. |
-| `GOOSE_TABLE` | no | `goose_migrations` | Migration bookkeeping table. |
-| `GOOSE_DRIVER`, `GOOSE_DBSTRING`, `GOOSE_MIGRATION_DIR` | no | — | Only used by the goose **CLI** (`make migrate`). |
+| `DATABASE_URL` | **yes** | — | SQLite DSN. The pragmas are load-bearing, see below. |
+| `JWT_SECRET` | **yes** | — | HS256 key. Rejected at startup under 32 bytes. |
+| `ADMINS` | **yes** | — | JSON array of `{email, full_name, password}`. Created at boot. |
+| `OPENAI_API_KEY` | **yes** | — | Embeddings. Search degrades without it; the app still boots. |
+| `APP_ENV` | no | `production` | Controls CORS and whether errors carry a `debug` field. |
+| `CORS_ORIGINS` | no | `*` | Set to the frontend origin in production. |
+| `RATE_LIMIT_RPS` | no | `15` | Per IP, all routes. |
+| `JWT_TTL` | no | `12h` | Access-token lifetime. |
+| `SEARCH_TOP_K` | no | `5` | Results returned by `/hardware/search`. |
+| `OPENAI_EMBEDDINGS_MODEL` / `EMBEDDINGS_MODEL_DIM` | no | `text-embedding-3-small` / `1536` | |
+| `PORT`, `GOOSE_*` | no | | `GOOSE_DRIVER`/`DBSTRING`/`MIGRATION_DIR` are only for the goose **CLI**. |
 
-### Bootstrap admins
-
-Accounts cannot self-register, so the system needs at least one admin before anyone can log in. `ADMINS` is that list:
-
-```bash
-ADMINS='[{"email":"you@booksy.com","full_name":"Your Name","password":"Str0ngPass!"},
-         {"email":"colleague@booksy.com","full_name":"A Colleague","password":"An0therPass!"}]'
-```
-
-Single quotes around the value are required — it contains double quotes.
-
-Every entry goes through **the same validation as `POST /profiles`**: a `@booksy.com` address, a name of at least two characters, and a password meeting the character-class policy. The whole list is validated before anything is written, so a typo in the third entry cannot leave the first two created and the boot half-finished. Two entries with the same address are rejected by position rather than silently collapsing into one.
-
-The step is idempotent. An account that already exists is left untouched — **including its password**, so editing `ADMINS` will not reset a password somebody has already changed. On a fresh volume the logs show which accounts were created:
-
-```
-created 2 admin profile(s): you@booksy.com, colleague@booksy.com
-```
-
-Because the value contains passwords, treat the whole variable as a secret: `fly secrets set ADMINS=...`, never `[env]` in `fly.toml`. Adding an admin later does not need this file at all — any admin can create another through `POST /profiles` with `"role": "admin"`.
-
-### The database DSN
+**The DSN pragmas are not optional:**
 
 ```
 file:data/hardware-hub.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)
 ```
 
-Each pragma is load-bearing:
+SQLite disables foreign keys **per connection by default** — without `foreign_keys(1)` every `REFERENCES` clause in the schema is decorative. WAL keeps readers from blocking the writer; `busy_timeout` waits for a lock instead of failing. The pool is capped at **one connection**: SQLite permits a single writer, and serialising access removes a whole class of `SQLITE_BUSY` errors at a throughput cost this app will never notice.
 
-- **`foreign_keys(1)`** — SQLite disables foreign-key enforcement **by default, per connection**. Without it every `REFERENCES` clause in the schema is decorative and orphan rows insert silently.
-- **`journal_mode(WAL)`** — readers do not block the writer.
-- **`busy_timeout(5000)`** — wait for a lock instead of failing immediately.
-
-The connection pool is capped at **one connection** (`SetMaxOpenConns(1)`). SQLite permits a single writer; serialising all access removes an entire class of `SQLITE_BUSY` errors at a throughput cost this application will never notice.
+**Admins** are validated exactly like `POST /profiles` (company domain, password policy), the whole list before anything is written, so a typo in the third entry can't half-finish a boot. Creating an admin is idempotent and never overwrites an existing password. Treat `ADMINS` as a secret — `fly secrets set`, never `fly.toml`.
 
 ## API reference
 
-All responses are wrapped in an envelope: `{"data": ...}` on success, `{"error": {...}}` on failure.
+Envelope: `{"data": ...}` on success, `{"error": {...}}` on failure. `Authorization: Bearer <token>` on everything except `/healthz` and `/auth/token`.
 
-Authentication is `Authorization: Bearer <token>` on every route except `/healthz` and `/auth/token`.
-
-| Method | Path | Auth | Description |
+| Method | Path | Auth | |
 | --- | --- | --- | --- |
-| `GET` | `/healthz` | — | Liveness probe |
-| `POST` | `/auth/token` | — | Exchange email + password for an access token |
+| `GET` | `/healthz` | — | Liveness |
+| `POST` | `/auth/token` | — | Email + password → access token |
 | `GET` | `/hardware` | user | List all equipment |
+| `GET` | `/hardware/search?query=…` | user | **Semantic search**, top k by meaning |
 | `POST` | `/hardware` | **admin** | Add equipment |
-| `PATCH` | `/hardware/:id` | **admin** | Edit name / brand / description / purchase date. Send `""` to clear a description or date |
+| `PATCH` | `/hardware/:id` | **admin** | Edit name / brand / description / purchase date. `""` clears a description or date |
 | `DELETE` | `/hardware/:id` | **admin** | Remove equipment |
-| `PATCH` | `/hardware/:id/repair` | **admin** | Send to repair (`available` → `repair`) |
-| `PATCH` | `/hardware/:id/available` | **admin** | Return to stock (`repair` → `available`) |
-| `GET` | `/rentals` | user | List **your own** rentals |
-| `POST` | `/rentals` | user | Rent a device |
+| `PATCH` | `/hardware/:id/repair` · `/available` | **admin** | State transitions |
+| `GET` `POST` | `/rentals` | user | List / create **your own** rentals |
 | `PATCH` | `/rentals/:id/return` | user | Return **your own** rental |
-| `GET` | `/profiles` | **admin** | List every account, employees and admins alike |
-| `POST` | `/profiles` | **admin** | Create an account |
+| `GET` `POST` | `/profiles` | **admin** | List all accounts / create one |
 | `DELETE` | `/profiles/:id` | **admin** | Remove an **employee** account |
-
-### Error format
-
-Validation failures report every bad field at once, keyed by the JSON field name:
-
-```json
-{
-  "error": {
-    "message": "The request payload is invalid.",
-    "fields": [
-      { "field": "email", "rule": "email", "message": "must be a valid email address" },
-      { "field": "password", "rule": "min", "message": "must be at least 8 characters" }
-    ],
-    "request_id": "GtFBxWlCdxSYSwXrbMxYPaknIQiMcrvK"
-  }
-}
-```
-
-Every response carries an `X-Request-Id`, echoed in the body and in every log line for that request, so a reported failure can be found in the logs.
 
 | Status | When |
 | --- | --- |
 | `400` | Malformed body, unknown JSON field, failed validation, bad path parameter |
-| `401` | Missing / invalid / expired token, wrong credentials |
-| `403` | Authenticated but not permitted (non-admin, or another user's rental) |
-| `404` | Resource does not exist |
-| `409` | Impossible state transition (renting a device in repair, double return, duplicate email) |
-| `429` | Rate limit exceeded — see `RATE_LIMIT_RPS` |
-| `503` | Request exceeded the 15s timeout |
-| `500` | Our bug. The client message is always generic; the full chain is logged. |
+| `401` / `403` | Bad credentials or token / authenticated but not permitted |
+| `404` / `409` | Missing resource / impossible transition (rent a device in repair, double return, duplicate email) |
+| `429` / `503` | Rate limit / 15s request timeout |
+| `500` | Our bug. Generic message to the client, full chain in the logs. |
+
+Validation failures list every bad field at once, keyed by JSON field name, with a `request_id` echoed in `X-Request-Id` and every log line for that request.
 
 ### Business rules
 
-- A device can only be rented when `available`. The guard is a compare-and-swap (`UPDATE ... WHERE id = ? AND status = 'available'`), so two simultaneous renters cannot both win.
-- Renting flips the status **and** opens a rental row **in one transaction** — the two can never disagree.
-- A partial unique index (`rentals_one_active_per_hardware_idx`) enforces at most one open rental per device at the storage layer, independent of application code.
-- A rented device cannot be sent to repair; it must be returned first, otherwise the open rental would be orphaned.
+- A device is rentable only when `available`. The guard is a compare-and-swap (`UPDATE … WHERE id = ? AND status = 'available'`), so two simultaneous renters cannot both win, and a partial unique index enforces one open rental per device at the storage layer regardless of application bugs.
+- Renting flips the status **and** opens the rental row in one transaction — they can never disagree.
+- A rented device can't go to repair; it must come back first.
 - Users list and return only their own rentals, **regardless of role**.
-- Accounts cannot self-register. Only an admin creates accounts.
-- Admins see the full account list, their colleagues included. Deletion is narrower than listing: the `DELETE` statement matches `role = 'employee'`, so an admin account can be listed but never removed through the API, and no one can delete themselves. Both refusals are deliberate — demoting or removing the last admin would lock everybody out of account management.
-- `description` and `purchase_date` are **clearable**: `PATCH {"description": ""}` empties the field, while omitting the key leaves it alone. `name` and `brand` are not clearable — they back `NOT NULL` columns and carry meaning, so an explicit `""` is a 400 rather than an erasure. The distinction is the pointer: a nil `*string` means the key was absent, a pointer to `""` means the client sent it and wants the value gone.
-- Only `@booksy.com` addresses may hold an account. Enforced on account creation and on the startup admin bootstrap, after the address is lowercased, so `Name@BOOKSY.COM` is accepted and stored as `name@booksy.com`.
-- The seed contains **inventory only** — no accounts and no rentals. The only accounts on a fresh install are the admins listed in `ADMINS`.
+- No self-registration — only admins create accounts, and only `@booksy.com` addresses, lowercased before validation.
+- Admins see all accounts; only **employee** accounts can be deleted, and nobody can delete themselves.
+- `description` and `purchase_date` are clearable (`""`); `name` and `brand` are not.
+- The seed is **inventory only** — no accounts, no rentals, nothing in a state a real user can't act on.
+
+## Semantic search (the AI layer)
+
+`GET /hardware/search?query=something to test a mobile app on` returns the iPhone and the Galaxy, not a keyword match.
+
+**How it works.** Each device's `name + brand + description` is embedded once and stored as a `float32` blob in `hardware_embeddings`, alongside the model that produced it and a SHA-256 of the source text. A query is embedded with the same model at request time; the API loads all vectors, ranks by cosine similarity, and returns the top 5 devices — vectors never leave the process.
+
+**Design decisions worth knowing:**
+
+- **Vectors live in their own table.** `hardware` has an `updated_at` trigger that fires on any update, so an embedding column would mark a device as modified when only a derived artifact changed. Separating them also makes swapping models a `DELETE`, not a migration.
+- **Embedding never happens inside a transaction.** The pool holds one connection; an HTTP call mid-transaction would block every other query for a network round trip. Devices are committed first, then embedded.
+- **The source hash decides staleness.** A `PATCH` that only touches `purchase_date` costs no API call. A startup backfill re-embeds anything missing or stale, and it is **non-fatal** — an OpenAI outage degrades search rather than stopping the service from booting.
+- **Data-quality notes are excluded from the embedded text.** They were up to 28% of some devices' vectors and measurably distorted ranking; they stay in the column for users and for the audit trail.
+- **Vectors are normalized**, so cosine is a dot product; similarity is computed once per candidate rather than inside the comparator.
+- **No vector index, deliberately.** `sqlite-vec` is a loadable C extension and needs CGO, costing the static binary. Brute force over 11 vectors is ~25µs; an index earns its keep somewhere past 100k rows.
 
 ## Architecture
 
 ```
-cmd/api/                 entrypoint: config → dependencies → migrate → admin → serve
+cmd/api/         config → dependencies → migrate → admins → embeddings → serve
 internal/
-  auth/                  login, JWT middleware, current-user context
-  hardware/              equipment CRUD and repair transitions
-  rentals/               rent / return / list
-  profiles/              account management + startup admin bootstrap
-    roles/               shared role vocabulary (leaf package)
-  server/                router, CORS
-    config/              environment configuration
-    dependencies/        dependency registry
-  utils/                 errors, validation, jwt, password, migrate
-migrations/              embedded SQL migrations
+  auth/          login, JWT middleware, current-user context
+  hardware/      CRUD, repair transitions, semantic search, embedding backfill
+  rentals/       rent / return / list
+  profiles/      accounts + startup admin bootstrap   (roles/ is a leaf package)
+  server/        router, CORS, config/, dependencies/
+  utils/         errors, validation, jwt, password, embeddings, migrate
+migrations/      embedded SQL
 ```
 
-Every domain package has the same shape: `build.go` (composition root), `handler.go` (HTTP), `store.go` (SQL), `models.go` and, where the request DTOs are numerous enough to earn their own file, `requests.go` — `hardware` keeps its two payload types in `models.go` instead.
+Every domain package has the same shape: `build.go` (composition root), `handler.go`, `store.go`, `models.go`, and `requests.go` where the DTOs earn a file.
 
-**Layering.** `utils/` and `roles/` are leaves that import nothing internal. Domain packages import `dependencies`, so anything the registry holds must sit *below* the domain — this is why the `jwt` package deals in plain strings rather than domain types, and why `roles` is its own package. Two import cycles were resolved this way during development.
-
-**The store interface.** Each domain declares a `Store` interface next to the handler that consumes it, with `SQLiteStore` implementing it. Handlers depend on the interface, not the implementation, so swapping the database means writing one adapter — and tests can substitute an in-memory fake with no database at all.
-
-**Error handling.** Handlers never choose status codes. They wrap errors with context (`fmt.Errorf("...: %w", err)`) and return them; a single `HTTPErrorHandler` maps sentinel errors (`ErrStoreNotFound`, `ErrStoreConflict`, `ErrStoreForbidden`, ...) onto status codes, logs the full chain, and returns a client-safe message. 5xx responses never leak internals; the detail is in the logs, correlated by request id.
-
-**Validation.** Request structs carry `validate` tags. Four custom rules are registered: `date` (a `YYYY-MM-DD` date, or empty), `notfuture` (a date not in the future), `password` (character-class policy) and `maxbytes` (a length limit in bytes rather than runes, so a multi-byte name cannot overflow a column). The company-domain rule needs no custom code — it is the built-in `endswith`.
-
-`date` exists because the built-in `datetime` cannot express a *clearable* date. `omitempty` only skips a **nil** pointer, so a `*string` pointing at `""` — a client asking to clear the field — still reaches the rule and is rejected as a malformed date. `date` treats an empty value as nothing to check, the way `notfuture` already did. Payload types can opt into two interfaces — `Normalizer` (trim/lowercase before validation) and `SelfValidator` (rules spanning several fields, such as "a PATCH must change something").
-
-**Strict JSON.** The JSON deserialiser is replaced with one that sets `DisallowUnknownFields`. A typo like `{"stauts": ...}` returns 400 instead of being silently ignored, and an attempt to set a field the client does not own (`{"status": "available"}`) is visible rather than quietly dropped.
+- **Layering.** `utils/` and `roles/` import nothing internal. Domain packages import `dependencies`, so anything the registry holds must sit *below* them — that's why `jwt` deals in plain strings, why `roles` is its own package, and why `Embedder` lives in `utils/embeddings`. Three import cycles were resolved this way.
+- **Store interfaces** are declared next to the handler that consumes them, with `SQLiteStore` implementing them — swapping databases means one adapter, and tests can substitute a fake.
+- **Handlers never choose status codes.** They wrap errors with context and return them; one `HTTPErrorHandler` maps sentinel errors onto codes, logs the full chain, and returns a client-safe message.
+- **Strict JSON.** `DisallowUnknownFields`, so `{"stauts": …}` is a 400 rather than a silent no-op, and a field the client doesn't own (`status`) can't be smuggled in.
+- **Validation.** Four custom rules: `date`, `notfuture`, `password`, `maxbytes`. Payload types opt into `Normalizer` (trim/lowercase before validation) and `SelfValidator` (cross-field rules).
 
 ## Data model
 
 ```
-profiles                    hardware                     rentals
---------                    --------                     -------
-id                          id                           id
-email          UNIQUE       name                         hardware_id  → hardware (CASCADE)
-full_name                   brand                        user_id      → profiles (RESTRICT)
-role           CHECK        description                  rented_at
-password_hash               purchase_date                returned_at
-created_at                  status        CHECK
-updated_at                  created_at
-                            updated_at
+profiles              hardware                    rentals              hardware_embeddings
+--------              --------                    -------              -------------------
+id                    id                          id                   hardware_id  → hardware (CASCADE)
+email      UNIQUE     name, brand                 hardware_id →CASCADE  model, dimensions
+full_name             description  NOT NULL ''    user_id    →RESTRICT  source_hash
+role       CHECK      purchase_date  nullable     rented_at             vector  BLOB
+password_hash         status       CHECK          returned_at           CHECK len = dims*4
 ```
 
-- `hardware.status` ∈ `available | in_use | repair`, `profiles.role` ∈ `employee | admin`, both enforced by `CHECK` constraints (SQLite has no `ENUM`).
-- **`description` is `NOT NULL DEFAULT ''`; `purchase_date` is nullable.** The two are modelled differently on purpose. A description is free text, where "no description" and "an empty description" are the same fact, so allowing `NULL` would give one fact two spellings. A date is not free text: `''` is not a date but a sentinel for "unknown", and SQL would happily compare it — `WHERE purchase_date < '2023-01-01'` matches `''`, and `MIN(purchase_date)` returns it. `NULL` is what SQL provides for an unknown value, and its three-valued logic keeps those rows out of range filters and aggregates for free.
-- `rentals` is append-only history; a return sets `returned_at` rather than deleting the row. `hardware.status` is a fast projection of that history.
-- Timestamps are TEXT in RFC 3339 UTC. Dates are TEXT `YYYY-MM-DD`. SQLite has no date type, and ISO-8601 sorts correctly as a string.
-- `ON DELETE CASCADE` on `hardware_id` (deleting a device removes its history), `RESTRICT` on `user_id` (an account with rental history cannot be deleted).
-- `updated_at` is maintained by triggers, since SQLite has no `ON UPDATE CURRENT_TIMESTAMP`.
+- `status` ∈ `available | in_use | repair` and `role` ∈ `employee | admin`, both `CHECK` constraints — SQLite has no `ENUM`.
+- `rentals` is append-only history; a return sets `returned_at`. `hardware.status` is a fast projection of it.
+- **`description` is `NOT NULL DEFAULT ''` but `purchase_date` is nullable, on purpose.** For free text, "no description" and "empty description" are the same fact. A date is different: `''` is not a date but a sentinel, and SQL compares it — `WHERE purchase_date < '2023-01-01'` would match it, and `MIN()` would return it. `NULL` is what SQL provides for unknown.
+- Timestamps are TEXT RFC 3339 UTC, dates TEXT `YYYY-MM-DD` — ISO-8601 sorts correctly as a string. `updated_at` is maintained by triggers (no `ON UPDATE CURRENT_TIMESTAMP` in SQLite).
 
 ## Implementation status and trade-offs
 
 ### ✅ Fully implemented
 
-**The management engine**
-- Admin command centre: add / edit / delete equipment, toggle repair status, create and remove accounts.
-- Login issuing HS256 JWTs. Accounts are created only by an admin; there is no self-registration.
-- Equipment list with name, brand, purchase date and status.
-
-**The rental engine**
-- Rent and return with guards against every impossible state: renting a device that is in repair or already out, returning a device twice, returning someone else's rental, sending a rented device to repair.
-- Concurrency-safe: compare-and-swap plus a partial unique index, so the invariant holds even if the application has a bug.
-
-**Cross-cutting**
-- Role-based authorisation (`employee` / `admin`) from a signed token claim, re-validated on every request.
-- Centralised error handling, structured logging with request-id correlation, strict JSON decoding, per-field validation errors, and a per-IP rate limit on every route.
-- Self-migrating binary and startup admin bootstrap, both idempotent.
+- **Management:** admin adds / edits / deletes equipment, toggles repair, creates and removes accounts. Login issues HS256 JWTs; no self-registration.
+- **Rentals:** rent and return with guards against every impossible state, concurrency-safe via compare-and-swap plus a partial unique index.
+- **AI layer:** semantic search over the inventory, with write-through embedding and an idempotent startup backfill.
+- **Cross-cutting:** role-based authorisation from a signed claim re-validated per request; centralised error handling; structured logging with request-id correlation; strict JSON; per-field validation errors; per-IP rate limiting; self-migrating binary.
 
 ### ⚡ Shortcuts and "hacks"
 
-**1. Filtering and sorting are done on the client, not the API.**
-- *Why acceptable:* the dataset is ~220 bytes per row — a thousand devices is ~54 KB gzipped, fetched once. Client-side filtering is instant, needs no round-trip, and removes dynamic `WHERE`/`ORDER BY` assembly (and its injection surface) from the backend entirely.
-- *The threshold:* this holds **until pagination is required**. Filtering and pagination must live on the same side; paginating without moving the filters would silently filter only the loaded page.
-- *The future:* `GetAll(ctx)` becomes `List(ctx, filters)`. Because handlers depend on the `Store` interface, the change is confined to one store and one handler.
+**1. Filtering and sorting happen on the client.** Rows are ~1KB, so a thousand devices is a single small fetch; client-side filtering is instant and keeps dynamic `WHERE`/`ORDER BY` assembly (and its injection surface) out of the backend. *This holds until pagination is needed* — filtering and pagination must live on the same side, or you filter only the loaded page. *Fix:* `GetAll(ctx)` → `List(ctx, filters)`, confined to one store and one handler.
 
-**2. Access tokens are long-lived (12h) with no refresh flow.**
-- *Why acceptable:* an internal tool with a single-day session expectation. A refresh flow is meaningful complexity for no benefit at this scale.
-- *The future:* short-lived (15 min) access token plus a rotating refresh token in an httpOnly cookie.
+**2. 12-hour access tokens, no refresh flow.** Acceptable for an internal tool with a single-day session. *Fix:* 15-minute access token plus a rotating refresh token in an httpOnly cookie.
 
-**3. The token is stored in `localStorage` on the frontend.**
-- *Why acceptable:* the frontend and API are on different origins, so a cookie would need `SameSite=None; Secure` plus credentialed CORS. `localStorage` + `Authorization` header is the pragmatic choice, and the exposure is bounded by the token lifetime.
-- *The risk, stated plainly:* `localStorage` is readable by any injected script, so an XSS becomes a token theft.
-- *The future:* httpOnly refresh cookie plus an in-memory access token.
+**3. The token lives in `localStorage`.** Frontend and API are on different origins, so a cookie needs `SameSite=None; Secure` plus credentialed CORS. **Stated plainly: `localStorage` is readable by any injected script, so an XSS becomes token theft.** Exposure is bounded by the token lifetime. *Fix:* as above.
 
-**4. `ON DELETE RESTRICT` makes some accounts undeletable.**
-- An employee with any rental history — even fully returned — cannot be deleted. This returns a clear 409 rather than a crash, but it means offboarding needs either an archive flag or a history reassignment step. Deliberate: silently deleting audit history is worse.
-
-**5. Deleting a device cascades its rental history.**
-- The inverse choice from the above. Rental history has no meaning without the device it refers to.
+**4. Embedding runs inside the request.** A create or update waits on OpenAI (~100–400ms) before responding. It's synchronous so the device is searchable the moment the response returns, and failures are logged rather than returned — an outage must not stop an admin adding hardware. *Fix:* a real queue and worker (roadmap 8).
 
 ### ⚠ Partial / missing
 
-- **AI layer.** Not implemented. Semantic search is the intended feature; the store interface is the seam it would attach to.
 - **No pagination.** Deliberate, per shortcut 1.
-- **"Unknown" has two spellings in `purchase_date`.** The column is nullable and the seed writes `NULL`, but the API writes `''` — both when a device is created without a date and when a PATCH clears one. Reads paper over it (`null` and `""` are both falsy in the client), yet a server-side `WHERE purchase_date IS NULL` would miss half the rows. Unifying on `NULL` means the update statement can no longer be a plain `COALESCE`, because `COALESCE` cannot express "set this to NULL" — see roadmap item 5.
-- **Deleting an admin answers `404`, not `403`.** `GET /profiles` returns every account, so the client can see admin rows it is not allowed to remove. The delete query matches `role = 'employee'`, and a statement that matches nothing is indistinguishable from a missing row, so the honest "you may not delete an admin" is reported as "no such profile". The fix is to look the row up before deleting and return a dedicated error; it is a status-code wart, not a security hole.
+- **"Unknown" has two spellings in `purchase_date`.** The seed writes `NULL`, the API writes `''`. Reads paper over it (both falsy in the client), but a server-side `WHERE purchase_date IS NULL` would miss half the rows.
+- **Deleting an admin answers `404`, not `403`.** The delete matches `role = 'employee'`, and a statement matching nothing is indistinguishable from a missing row. A status-code wart, not a security hole.
+- **No relevance floor on search.** Top-K always returns K results, so with 11 devices the tail can be irrelevant. A minimum cosine threshold is the fix.
 
 ### 🔮 Next steps — the 24-hour roadmap
 
-1. **Store-level tests for the failure paths.** The end-to-end suite cannot easily provoke a database error, so the `ErrStoreInternal` branches are the main uncovered code. An injected failing driver would close that gap.
-2. **The AI layer — semantic search.** Embed each device's name, brand and description at write time, store the vectors alongside the rows, and rank by cosine similarity at query time. `"something to test a mobile app on"` should return the iPhone and the Galaxy.
-3. **Refresh tokens and rate limiting.** Shorten the access token, add rotation, and put a more granular rate limiter on the endpoints, possibly selecting more thoughtful limiting keys like the JWT("sub") key instead of the IP address for protected routes.
-4. **Come up with a way to delete a user with rental history.** For example, make a delete operation work in the way that the account is being blocked forever from access to it (set the password_hash equal to "!") and delete user data such as `"email"` and `"full_name"` or set them to some random string and "Deleted Employee" values. Or just add a flag called deleted that allows distinguishing between the deleted account and active ones at the DB and Application levels.
-5. **Give `purchase_date` a single spelling for "unknown".** Clearing a date currently stores `''` while the seed stores `NULL`, so the nullable column holds two versions of the same fact. The write path needs `''` mapped to `NULL`, which means replacing `COALESCE($4, purchase_date)` with a `CASE` that separates "key absent" from "key present and empty" — `COALESCE` alone cannot set a column to `NULL`. An `Optional[T]` wrapper would make that distinction a type rather than a convention, which is the better answer once a field appears where `''` is itself a meaningful value.
-6. **Improve business logic.** Clarify the boundaries of admin capabilities. For example, can an admin manage the rentals of the employees? Or, does the employee need to request approval of the hardware rental?
-7. **Add tiny functionalities for better UX.** For example, add notifications for the users that will notify them when the needed hardware is back to `"available"` status. Or, add a queue for the hardware, so that employees just put them into the virtual queue to get the awaited hardware instead of constantly monitoring for the device availability.
-8. **Move to a more production-ready store.** Migrate to a more mature database such as Postgres to have broader functionality in the future. The earlier the migration happens, the easier it will be to do it. Additionally, using something like Supabase would allow you to make changes to the user interface, allowing you to fix things and control the most important things, such as admin management, manually.
-9. **Decouple the API application and the store.** Now, the application and the store are titly couples and deployed with a single Docker container. For now, it works well, but it will create complexities in the future. For example, such a setup already limits the deployment options, and great services such as GCP Cloud Run cannot be selected by design, which has an effect on the maintainability and infrastructure costs.
-10. **Stop implementing the auth on your own.** It is better and more secure to use services such as Supabase Auth to have a more secure system overall and features such as a client library, key rotation, and TTL management out of the box, tested and working.
+1. **Store-level tests for failure paths.** The end-to-end suite can't easily provoke a database error, so `ErrStoreInternal` branches are the main uncovered code. An injected failing driver closes the gap.
+2. **A relevance threshold on search**, so a vague query returns three good results instead of five with two duds.
+3. **Refresh tokens and finer rate limiting**, keyed on the JWT `sub` rather than IP for authenticated routes.
+4. **Soft-delete for accounts with rental history** — blank the personal data and set a `deleted` flag rather than cascading the whole history for the user.
+5. **One spelling for an unknown `purchase_date`.** Mapping `''` → `NULL` means replacing `COALESCE($4, …)` with a `CASE`, since `COALESCE` cannot set a column to `NULL`. An `Optional[T]` wrapper would make it a type rather than a convention.
+6. **Clarify admin boundaries** — can an admin manage employees' rentals? Should renting need approval?
+7. **UX**: notify users when a device returns to `available`, and a queue for contested devices instead of polling the list.
+8. **A real embedding queue and worker.** Today embedding happens in the handler, so the client waits for something they didn't ask for. A queue plus a small Cloud Function would make it a true background job, with a dead-letter queue so a failed embedding can be replayed after the cause is fixed rather than just logged.
+9. **AI-generated descriptions.** Let admins opt into generating a device description on create or update — good descriptions are what make search work, and writing them by hand is the slow part.
+10. **Move to Postgres** and decouple the store from the app. The current single-container coupling already rules out platforms like Cloud Run; the earlier the migration, the cheaper it is.
+11. **Stop hand-rolling auth.** Supabase Auth or similar brings key rotation, TTL management and a client library that are tested and working.
 
 ## Testing
 
@@ -321,38 +212,11 @@ updated_at                  created_at
 make test
 ```
 
-Table-driven end-to-end tests covering every handler. They drive the **real** router, middleware stack and SQLite store — only the database file is disposable, created per test in `t.TempDir()`.
+**126 table-driven end-to-end cases, 73.1% statement coverage** of `internal/…`. They drive the real router, middleware and SQLite store — only the database is disposable, one per test in `t.TempDir()`, and each test runs the real migrations and startup bootstrap, so a broken migration fails the build.
 
-That is a deliberate choice over unit tests with mocked stores. Nearly every defect this project hit during development lived in the seam *between* layers: a query issued outside its transaction, a sentinel error that never reached the error handler, middleware that dropped the user from the request context, a `RETURNING` clause whose post-update semantics inverted a guard. A mocked store sees none of those.
+That's deliberate over unit tests with mocked stores: nearly every defect this project hit lived *between* layers — a query outside its transaction, a sentinel that never reached the error handler, a `RETURNING` clause whose post-update semantics inverted a guard, a sort whose direction flipped during a refactor. A mocked store sees none of those.
 
-| File | Covers |
-| --- | --- |
-| `tests/api_test.go` | the harness — the whole vocabulary the other four files use |
-| `tests/auth_test.go` | login, indistinguishable failure modes, malformed payloads, token rejection, rate limiting |
-| `tests/hardware_test.go` | CRUD, validation, repair transitions, admin-only writes, strict JSON, clearing a field vs omitting it |
-| `tests/rentals_test.go` | rent/return round trip, double-rent, ownership scoping, conflicts |
-| `tests/profiles_test.go` | account creation, the `@booksy.com` rule, password policy, delete guards |
-
-The harness is eight names, and there is nothing else to learn before reading a test:
-
-| Helper | Returns |
-| --- | --- |
-| `newAPI(t)` | a running app on an empty database, with a logged-in admin in `a.admin` |
-| `a.call(token, method, path, body)` | one request → `(status, body)` |
-| `a.login(email, password)` | a bearer token |
-| `a.employee(email)` | a bearer token and a profile id |
-| `a.device(name)` | a hardware id |
-| `a.rent(token, deviceID)` | a rental id |
-| `field(t, body, "data.status")` | one value from a JSON body, by dotted path |
-| `count(t, body, "data")` | the length of a JSON array |
-
-Request bodies in the tables are raw JSON strings rather than Go values, so each case shows exactly what goes on the wire — including payloads no Go struct could express, such as a misspelled field or a field the DTO deliberately does not have. Fixtures are created through the public API, never with `INSERT`, so a test can only set up state a real operator could.
-
-The rate limit is configurable (`RATE_LIMIT_RPS`) largely because of this suite: the production value of 15 requests per second throttles a test that drives the API as fast as the CPU allows. The harness raises it, and one test lowers it again to prove the middleware is still wired up.
-
-Statement coverage of `internal/...` is **75.0%**. The uncovered remainder is mostly `ErrStoreInternal` branches, which require a database-level failure to reach.
-
-The suite also exercises startup: every test runs the real migrations and the real admin bootstrap, so a broken migration or a bootstrap regression fails the build.
+Request bodies are raw JSON strings, so each case shows exactly what goes on the wire — including payloads no Go struct could express, like a misspelled field. Fixtures go through the public API, never `INSERT`, so a test can only set up state a real operator could. The embedder is swapped for a deterministic fake, so the suite needs no API key, no network and no budget. The uncovered remainder is mostly `ErrStoreInternal` branches, which need a database-level failure to reach.
 
 ## The AI development log
 
@@ -360,107 +224,64 @@ The suite also exercises startup: every test runs the real migrations and the re
 
 | Tool | Used for |
 | --- | --- |
-| Claude Code | Claude Code was the main tool in the AI stack. Used for brainstorming the architecture and questioning the proposed solutions to receive feedback and a list of areas for improvement. Claude Code helped to complete several parts of the codebase, including some tests, helper functions, and minor fixes to the logic. Moreover, the tool allowed for better and faster information collection on the libraries and tooling work principles and their APIs. Finally, Claude Code allowed for automating routine work such as writing the README.md and exporting the API spec for the Agent working on the frontend. |
-| CodeRabbit | CodeRabbit was used after every commit to validate the code and highlight bugs, typos, and other kinds of issues. If you see a commit with a name such as "Added improvements after code review", it is very likely that the additional commit was needed to apply some changes proposed by the CodeRabbit AI Agent. |
-| GitHub Copilot | GitHub Copilot was used to implement small functionalities and speed up things like the manual rewriting of object names in a few places at the same time. |
+| **Claude Code** | The main tool. Brainstorming architecture and having my proposals challenged, completing parts of the codebase (tests, helpers, fixes), and fast research on library APIs and behaviour. |
+| **CodeRabbit** | Ran after most commits to flag bugs and typos. Commits named "Added improvements after code review" are usually applying its findings. |
+| **GitHub Copilot** | Small functionality and mechanical edits like renaming across several places at once. |
 
 ### Data strategy — auditing the seed
 
-The provided dataset is deliberately dirty. Every record was audited before insertion and each deviation is recorded as a numbered decision in `migrations/002_seed.sql`, with the reasoning in the file itself. Summary:
+The provided dataset is deliberately dirty. Every record was audited before insertion and each deviation is a numbered decision (`[D-1]`…`[D-9]`) in `migrations/002_seed.sql`, with the reasoning in the file itself.
 
 | Issue in source | Decision |
 | --- | --- |
-| Duplicate `id: 4` (Galaxy S21 and "Duplicate ID Test Laptop") | A primary key cannot hold both. First occurrence keeps the id; the second is appended at 12 rather than backfilling the unexplained gap at id 8. |
-| Brand `"Appel"` | Corrected to `"Apple"` — an unambiguous misspelling. |
-| Date `"22-05-2023"` (DD-MM-YYYY) | Parsed to `2023-05-22`. Unambiguous, since there is no month 22. |
-| Date `"2027-10-10"` (future) | **Nulled, not guessed.** Any plausible correction is invention, and invented data is worse than absent data. The raw value is preserved in the description. |
-| Status `"Unknown"` | Not a value the model has. Quarantined as `repair` so the device cannot be rented until a human identifies it. A fourth status is the better long-term model — a deliberate deferral. |
-| Dell XPS: `"Available"` **with** the note *"Battery swelling, do not issue without service."* | **The note wins.** Forced to `repair`. Trusting the status field would let the app hand an employee a fire hazard. This is the one place the migration deliberately contradicts its source. |
-| MacBook Air M2: `"Available"` with liquid damage in `history` | Same reasoning — forced to `repair`. |
-| `assignedTo: "j.doe@booksy.com"` on an in-use device | Recorded in the device description and seeded as `available`. An earlier revision created a placeholder account and an open rental to keep `in_use` consistent — but placeholders have no usable password, and a rental may only be returned by its owner, so those devices were permanently stuck. Seeding inventory only keeps every row in a state a real user can act on. |
-| `"In Use"` with **no** assignee | Same resolution: seeded as `available`. Claiming a device is on the shelf when someone physically holds it is a real loss of information, but it is recoverable — an admin re-issues it through the app. A device frozen in `in_use` with no one able to return it is not. |
-| Empty brand (`""`) on the "Unknown Device" | Replaced with the placeholder `"Unknown Brand"`. `brand` is `NOT NULL` and the API requires `min=1`, so a blank brand is a row the application itself could never create — the same class of problem as the `in_use` devices above. The placeholder is visibly a placeholder, and the row stays quarantined in `repair` until a human identifies it. |
-| Null purchase date | Kept as `NULL`. Absent is a legitimate value, and the column is nullable precisely so it can be said. |
+| Duplicate `id: 4` | A primary key can't hold both. First occurrence keeps the id; the second is appended at 12 rather than backfilling the unexplained gap at 8. |
+| Brand `"Appel"`, date `"22-05-2023"` | Corrected — an unambiguous misspelling, and a date that must be in the format YYYY-MM-DD instead of DD-MM-YYYY. |
+| Date `"2027-10-10"` (future) | **Nulled, not guessed.** Any plausible correction is invention, and invented data is worse than absent data. Raw value preserved in the description. |
+| Status `"Unknown"` | Not a value the model has. Quarantined as `repair` so it can't be rented until a human identifies it. A fourth status is the better long-term model — a deliberate deferral. |
+| Dell XPS: `"Available"` **with** *"Battery swelling, do not issue without service."* | **The note wins.** Forced to `repair`. Trusting the status field would let the app hand someone a fire hazard. The one place the migration deliberately contradicts its source. |
+| MacBook Air: `"Available"` with liquid damage in `history` | Same reasoning — forced to `repair`. |
+| `"In Use"` devices (one with `assignedTo`, one without) | Seeded as `available`, assignment recorded in the description. `in_use` needs an open rental, and a rental needs an account that can return it — placeholder accounts nobody can log into would freeze those devices forever. |
+| Empty brand on the unknown device | Replaced with `"Unknown Brand"`. `brand` is `NOT NULL` with `min=1` in the API, so a blank brand is a row the application itself could never create. |
+| Missing descriptions (8 of 11) | **Authored, not sourced** — see `[D-9]`. Semantic search embeds `name + brand + description`, and "Apple iPhone 13 Pro Max / Apple" is too little text to sit near "something to test a mobile app on". Each is catalogue copy about a well-known product, clearly the operator's own text, asserting nothing about the source record. |
 
-The general principle: **normalise what is unambiguous, quarantine what is not, and never invent.** The brand placeholder is the one deliberate exception, and it is an admission of ignorance rather than a fabricated fact: writing `"Unknown Brand"` claims nothing about the device, whereas guessing `"Logitech"` would.
+The principle: **normalise what is unambiguous, quarantine what is not, and never invent** — where "invent" means fabricating a missing source *value*, not writing your own product copy.
 
 ### Prompt trail
 
-**[PROMPTS.md](PROMPTS.md)** — the 41 prompts of the session, with the twelve that shaped the architecture quoted in full and annotated with what each one settled.
+**[PROMPTS.md](PROMPTS.md)** — the session's prompts, with the turns that shaped the architecture quoted and annotated with what each settled.
 
-The turns worth reading first: the [stack change](PROMPTS.md#3-python--supabase--go--sqlite) from Python + Supabase to Go + SQLite, the [interface-first instruction](PROMPTS.md#2-interfaces-before-implementations) that made that change cheap, the [action-routes-vs-REST](PROMPTS.md#9-action-routes-vs-rest) discussion behind `PATCH /hardware/:id/repair`, and the [seed cleanup](PROMPTS.md#11-a-seed-that-nobody-could-unstick) that reversed an AI proposal.
+### The "correction" — three times the AI was wrong
 
-### The "correction"
+**1. A login flow that could never work.** The generated `GetUser` hashed the submitted password, then `SELECT … WHERE email = ? AND password_hash = ?`. It compiles and reads sensibly, and is fundamentally broken: bcrypt salts every hash, so hashing the same password twice yields different strings and that `WHERE` can never match. Every login would have returned 404, forever. The fix is to look up by email alone and verify in Go with `bcrypt.CompareHashAndPassword`. *Caught by reasoning about bcrypt's properties, then confirmed by hashing one password three times and getting three different outputs.*
 
-AI assistance produced several defects that the review caught. The following are worth mentioning:
+**2. Seed data that locked itself.** The AI proposed keeping the source's `"in_use"` devices and inventing placeholder accounts with garbage emails and `!` passwords, plus rental rows binding them — purely to satisfy the invariant that `in_use` needs a rental. I rejected it: only the renting account can end a rental, and nobody could log in as those placeholders, so two devices would have been unavailable forever. The seed now carries inventory only. *Caught by asking what the seed would mean in production rather than whether it satisfied the schema.*
 
-**1. Seed data decisions.** The AI proposed leaving the `"in_use"` hardware with the same status but inventing accounts with garbage emails and `!` passwords, and adding rental records binding those new users and hardware pieces just to ensure that the DB has no invalid state, since every `"in_use"` hardware requires a rental row and a user who rents it by design. I decided to move away from this and seed those hardware rows with the `"available"` status. Otherwise, those devices would be locked forever, because only the renting account can return the hardware and end the rental. Since the proposed accounts were garbage, nobody could log in and return the hardware to `"available"` status, resulting in permanent lock. Thus, the app only loads one admin account into profiles at startup if not exist, allowing the platform admin to manage the initial products and add employees. *Caught by reasoning about the ideal seed state, so that it functions in the way it would be in the case of a real production app.*
-
-**2. A login flow that could never work.** The generated `GetUser` looked correct: hash the submitted password, then `SELECT ... WHERE email = ? AND password_hash = ?`. It compiles, reads sensibly, and is fundamentally broken — bcrypt salts every hash, so hashing the same password twice yields different strings and that `WHERE` can never match. Every login would have returned 404, forever. The fix is to look up by email alone and verify in Go with `bcrypt.CompareHashAndPassword`, which re-derives using the salt embedded in the stored hash. *Caught by reasoning about bcrypt's properties, then confirmed by hashing the same password three times and observing three different outputs.*
-
-**3. A silent deadlock.** In `MarkRepair`, the status `SELECT` ran on the transaction but the `UPDATE` ran on `s.client` — a second connection. With the pool capped at one connection, that second query waits for a connection the transaction is holding. Every call hung for the full 15-second timeout and returned 503. The same class of bug appeared earlier as a missing `defer tx.Rollback()`, which left an abandoned transaction holding the only connection and deadlocked the *entire application* permanently. *Caught by measuring: the endpoint returned in 15.002s, which is the timeout, not a slow query.*
+**3. A silent deadlock.** In `MarkRepair` the status `SELECT` ran on the transaction but the `UPDATE` ran on `s.client` — a second connection. With the pool capped at one, that query waited for a connection the transaction was holding. Every call hung for the full 15-second timeout and returned 503. *Caught by measuring: the endpoint returned in 15.002s, which is a timeout, not a slow query.* The same class of bug shaped the embedding design — an HTTP call inside a transaction would hold that single connection for a whole network round trip, which is why embedding happens after the commit.
 
 ## Deployment
 
-Deployed to **Fly.io**. SQLite needs one machine, one writer and a real filesystem, so the deployment target has to offer a persistent volume — and the frontend is served over HTTPS, so the API needs a certificate or the browser blocks the calls as mixed content. Fly gives both without a VM to maintain.
-
-`fly.toml` is committed. Secrets are not.
+Deployed to Fly.io — see the stack table for why. `fly.toml` is committed; secrets are not.
 
 ```bash
 fly apps create <APP_NAME>
 fly volumes create hardware_hub_data --region fra --size 1 --yes
-fly secrets set JWT_SECRET="$(openssl rand -base64 48)"
-fly secrets set ADMINS='[{"email":"you@booksy.com","full_name":"Your Name","password":"<STRONG_PASSWORD>"}]'
+fly secrets set JWT_SECRET="$(openssl rand -base64 48)" OPENAI_API_KEY='sk-...'
+fly secrets set ADMINS='[{"email":"you@booksy.com","full_name":"You","password":"..."}]'
 fly deploy --ha=false
 ```
 
-`ADMINS` is set separately because it holds passwords and shell-quoting a JSON blob alongside other assignments is easy to get wrong.
+**`--ha=false` is not optional.** Fly creates two machines by default; with SQLite that's two independent databases behind one hostname, and requests would see different data depending on which answered. One volume, one machine.
 
-`--ha=false` is not optional. Fly creates two machines by default; with SQLite that means two independent database files behind one hostname, and requests would see different data depending on which machine answered. **One volume, one machine.**
+The image holds only the binary — the database lives on the volume, so a release never touches it. On boot the binary applies pending migrations, ensures the admins exist, and backfills any missing embeddings, all idempotent.
 
-### What survives a deploy
-
-The image holds only the binary. The database lives on the mounted volume, so a new release never touches it. On boot the binary applies any pending migrations — idempotent, a no-op when there is nothing new — and ensures every account in `ADMINS` exists without overwriting one that already does.
-
-`auto_stop_machines` lets the machine sleep when idle and wake on the next request. The volume persists across stops, so only the machine is transient. Set `min_machines_running = 1` to avoid cold starts.
-
-### Rolling out a seed change
-
-Migrations are versioned, so goose will not re-run `002_seed.sql` on a database that already recorded version 2. A seed edit therefore needs the database discarded, not just a redeploy:
+**Migrations are versioned, so editing an applied one does nothing.** A seed change needs the database discarded:
 
 ```bash
 fly ssh console -C "rm -f /app/data/hardware-hub.db /app/data/hardware-hub.db-wal /app/data/hardware-hub.db-shm"
-fly apps restart <APP_NAME>
+fly deploy --ha=false
 ```
 
-The next boot finds an empty volume, runs both migrations from scratch and recreates the admins.
-
-### Adding an admin to a running deployment
-
-Two ways, and the API one is usually better:
-
-```bash
-# Through the API — no restart, no secret change.
-curl -X POST https://<APP_NAME>.fly.dev/profiles \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"email":"new.admin@booksy.com","password":"Str0ngPass!","full_name":"New Admin","role":"admin"}'
-```
-
-Editing `ADMINS` also works — append an object and `fly secrets set ADMINS=...`, which restarts the machine and creates only the new entry. Use it when the account must survive a volume wipe; otherwise prefer the API, so passwords do not accumulate in configuration.
-
-### Production checklist
-
-- `APP_ENV=production` — hides the `debug` field from error responses.
-- `CORS_ORIGINS=<FRONTEND_ORIGIN>` — not `*`.
-- `JWT_SECRET` and `ADMINS` via `fly secrets`, never in `fly.toml` — `ADMINS` contains passwords. Generate the secret with `openssl rand -base64 48`.
-- Rotate every password in `ADMINS` after first login. The bootstrap never overwrites an existing account, so those values stop being authoritative the moment an admin changes their own password — but they are still sitting in your secrets store.
-- Back up before a migration that is not purely additive:
-  ```bash
-  fly ssh console -C "cp /app/data/hardware-hub.db /app/data/pre-deploy.db"
-  ```
-
-### The alternative: GCP Compute Engine
-
-Equally valid and documented here because it was the original plan. An `e2-micro` with a persistent disk gives the same one-machine-one-writer guarantee, and the container mounts `/var/lib/hardware-hub` for its data. The cost is TLS: a bare VM serves plain HTTP, so it needs a reverse proxy (Caddy obtains Let's Encrypt certificates automatically) plus a hostname — a real domain, or wildcard DNS such as `sslip.io`, which resolves an IP embedded in the name and is enough for Let's Encrypt to issue.
-
-Cloud Run was rejected. Its filesystem is ephemeral and its instances multiply, and the volume types it does support — GCS FUSE and Filestore — do not provide the POSIX locking SQLite requires. Google's own documentation warns against running a database on gcsfuse.
+**Production checklist:** 
+- `APP_ENV=production` · `CORS_ORIGINS=<FRONTEND_ORIGIN>` not `*` · `JWT_SECRET`, `ADMINS` and `OPENAI_API_KEY` via `fly secrets` 
+- rotate the bootstrap passwords after first login (the values stay in your secrets store) 
+- back up before a non-additive migration with `fly ssh console -C "cp /app/data/hardware-hub.db /app/data/pre-deploy.db"`.

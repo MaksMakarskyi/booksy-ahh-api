@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/MaksMakarskyi/booksy-go-api/internal/hardware"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/profiles"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server"
 	"github.com/MaksMakarskyi/booksy-go-api/internal/server/config"
@@ -43,6 +44,14 @@ func main() {
 		log.Printf("created %d admin profile(s): %s", len(created), strings.Join(created, ", "))
 	} else {
 		log.Printf("all %d admin profile(s) already exist, left unchanged", len(cfg.Admins))
+	}
+
+	// Non-fatal on purpose: an embedding-provider outage should degrade search,
+	// not stop the service from booting.
+	if embedded, err := hardware.EnsureEmbeddings(ctx, deps); err != nil {
+		log.Printf("embedding backfill incomplete after %d device(s): %v", embedded, err)
+	} else if embedded > 0 {
+		log.Printf("embedded %d hardware item(s)", embedded)
 	}
 
 	srv, err := server.NewServer(deps)

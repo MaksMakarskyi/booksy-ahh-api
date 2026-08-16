@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 CREATE TABLE IF NOT EXISTS rentals (
     id          INTEGER PRIMARY KEY,
     hardware_id INTEGER NOT NULL REFERENCES hardware (id) ON DELETE CASCADE,
-    user_id     INTEGER NOT NULL REFERENCES profiles (id) ON DELETE RESTRICT,
+    user_id     INTEGER NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
     rented_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     returned_at TEXT,
 

@@ -1,6 +1,8 @@
 package hardware
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 
 	valutils "github.com/MaksMakarskyi/booksy-go-api/internal/utils/validation"
@@ -32,6 +34,29 @@ func (s HardwareStatus) IsValid() bool {
 	default:
 		return false
 	}
+}
+
+// dataQualityMarker introduces the provenance notes the seed records in a
+// device's description. They belong in the column — users see why a purchase
+// date is blank, and the migration's audit trail reads out of the data — but
+// they are metadata about a record, not a description of a thing, and they
+// measurably distort search: they run to 28% of some devices' embedding text.
+const dataQualityMarker = "Data quality:"
+
+func (h Hardware) EmbeddingText() string {
+	description := h.Description
+	if index := strings.Index(description, dataQualityMarker); index >= 0 {
+		description = description[:index]
+	}
+
+	parts := make([]string, 0, 3)
+	for _, part := range []string{h.Name, h.Brand, description} {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+
+	return strings.Join(parts, "\n")
 }
 
 var _ valutils.Normalizer = (*NewHardware)(nil)
@@ -89,4 +114,37 @@ func trimmed(value *string) *string {
 	trimmed := strings.TrimSpace(*value)
 
 	return &trimmed
+}
+
+type Embedding struct {
+	HardwareID int
+	Model      string
+	SourceHash string
+	Vector     []float32
+}
+
+type EmbeddedHardware struct {
+	Hardware
+	Model  string
+	Vector []float32
+}
+
+type EmbeddingStatus struct {
+	Hardware
+	Model      *string `db:"embedding_model"`
+	SourceHash *string `db:"embedding_source_hash"`
+}
+
+func (es EmbeddingStatus) NeedsEmbedding(model, sourceHash string) bool {
+	if es.Model == nil || es.SourceHash == nil {
+		return true
+	}
+
+	return *es.Model != model || *es.SourceHash != sourceHash
+}
+
+func SourceHash(text string) string {
+	sum := sha256.Sum256([]byte(text))
+
+	return hex.EncodeToString(sum[:])
 }
