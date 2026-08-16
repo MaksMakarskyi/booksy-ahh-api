@@ -25,7 +25,7 @@ type Config struct {
 	OpenAIApiKey          string `env:"OPENAI_API_KEY, required"`
 	OpenAIEmbeddingsModel string `env:"OPENAI_EMBEDDINGS_MODEL, default=text-embedding-3-small"`
 
-	EmbeddingsModelDim int64 `env:"EMBEDDINGS_MODEL_DIM, default=1536"`
+	EmbeddingsModelDim int64 `env:"EMBEDDINGS_MODEL_DIM, default=512"`
 
 	SearchTopK int `env:"SEARCH_TOP_K, default=5"`
 

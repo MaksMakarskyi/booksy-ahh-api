@@ -14,6 +14,9 @@ primary_region = 'fra'
   CORS_ORIGINS = 'https://booksy-ahh.vercel.app'
   DATABASE_URL = 'file:data/hardware-hub.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)'
   PORT = '8080'
+  OPENAI_EMBEDDINGS_MODEL="text-embedding-3-small"
+  EMBEDDINGS_MODEL_DIM=512
+  SEARCH_TOP_K=5
 
 [[mounts]]
   source = 'hardware_hub_data'
