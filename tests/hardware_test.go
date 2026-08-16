@@ -356,7 +356,10 @@ func TestSearchReturnsAtMostTopK(t *testing.T) {
 func TestSearchDoesNotLeakVectors(t *testing.T) {
 	a := newAPI(t)
 
-	_, body := a.call(a.admin, "GET", "/hardware/search?query=phone", "")
+	status, body := a.call(a.admin, "GET", "/hardware/search?query=phone", "")
+	if status != 200 {
+		t.Fatalf("status = %d, want 200 (%s)", status, body)
+	}
 
 	for _, key := range []string{"vector", "Vector", "model", "Model", "embedding"} {
 		if field(t, body, "data.0."+key) != nil {

@@ -59,7 +59,7 @@ All configuration is environment variables; `.env` is loaded by `make` and Docke
 | `RATE_LIMIT_RPS` | no | `15` | Per IP, all routes. |
 | `JWT_TTL` | no | `12h` | Access-token lifetime. |
 | `SEARCH_TOP_K` | no | `5` | Results returned by `/hardware/search`. |
-| `OPENAI_EMBEDDINGS_MODEL` / `EMBEDDINGS_MODEL_DIM` | no | `text-embedding-3-small` / `1536` | |
+| `OPENAI_EMBEDDINGS_MODEL` / `EMBEDDINGS_MODEL_DIM` | no | `text-embedding-3-small` / `512` | |
 | `PORT`, `GOOSE_*` | no | | `GOOSE_DRIVER`/`DBSTRING`/`MIGRATION_DIR` are only for the goose **CLI**. |
 
 **The DSN pragmas are not optional:**
@@ -152,13 +152,13 @@ Every domain package has the same shape: `build.go` (composition root), `handler
 ## Data model
 
 ```
-profiles              hardware                    rentals              hardware_embeddings
---------              --------                    -------              -------------------
-id                    id                          id                   hardware_id  → hardware (CASCADE)
-email      UNIQUE     name, brand                 hardware_id →CASCADE  model, dimensions
-full_name             description  NOT NULL ''    user_id    →RESTRICT  source_hash
-role       CHECK      purchase_date  nullable     rented_at             vector  BLOB
-password_hash         status       CHECK          returned_at           CHECK len = dims*4
+profiles                hardware                      rentals                 hardware_embeddings
+--------                --------                      -------                 -------------------
+id                      id                            id                      hardware_id  → hardware (CASCADE)
+email         UNIQUE    name, brand                   hardware_id →CASCADE    model, dimensions
+full_name               description    NOT NULL ''    user_id     →CASCADE    source_hash
+role          CHECK     purchase_date  nullable       rented_at               vector  BLOB
+password_hash           status         CHECK          returned_at             CHECK len = dims*4
 ```
 
 - `status` ∈ `available | in_use | repair` and `role` ∈ `employee | admin`, both `CHECK` constraints — SQLite has no `ENUM`.
