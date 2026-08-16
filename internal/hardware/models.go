@@ -10,7 +10,7 @@ type Hardware struct {
 	ID           int            `json:"id"`
 	Name         string         `json:"name"`
 	Brand        string         `json:"brand"`
-	Description  *string        `json:"description"`
+	Description  string         `json:"description"`
 	PurchaseDate *string        `json:"purchase_date"`
 	Status       HardwareStatus `json:"status"`
 	CreatedAt    string         `json:"created_at"`
@@ -37,17 +37,17 @@ func (s HardwareStatus) IsValid() bool {
 var _ valutils.Normalizer = (*NewHardware)(nil)
 
 type NewHardware struct {
-	Name         string  `json:"name"          validate:"required,min=1,max=255"`
-	Brand        string  `json:"brand"         validate:"required,min=1,max=255"`
-	Description  *string `json:"description"   validate:"omitempty,min=1,max=4096"`
-	PurchaseDate *string `json:"purchase_date" validate:"omitempty,datetime=2006-01-02,notfuture"`
+	Name         string `json:"name"          validate:"required,min=1,max=255"`
+	Brand        string `json:"brand"         validate:"required,min=1,max=255"`
+	Description  string `json:"description"   validate:"omitempty,max=4096"`
+	PurchaseDate string `json:"purchase_date" validate:"omitempty,date,notfuture"`
 }
 
 func (nh *NewHardware) Normalize() {
 	nh.Name = strings.TrimSpace(nh.Name)
 	nh.Brand = strings.TrimSpace(nh.Brand)
-	nh.Description = trimmedOrNil(nh.Description)
-	nh.PurchaseDate = trimmedOrNil(nh.PurchaseDate)
+	nh.Description = strings.TrimSpace(nh.Description)
+	nh.PurchaseDate = strings.TrimSpace(nh.PurchaseDate)
 }
 
 var (
@@ -59,15 +59,15 @@ type UpdatedHardware struct {
 	ID           int     `json:"-"             param:"id"`
 	Name         *string `json:"name"          validate:"omitempty,min=1,max=255"`
 	Brand        *string `json:"brand"         validate:"omitempty,min=1,max=255"`
-	Description  *string `json:"description"   validate:"omitempty,min=1,max=4096"`
-	PurchaseDate *string `json:"purchase_date" validate:"omitempty,datetime=2006-01-02,notfuture"`
+	Description  *string `json:"description"   validate:"omitempty,max=4096"`
+	PurchaseDate *string `json:"purchase_date" validate:"omitempty,date,notfuture"`
 }
 
 func (uh *UpdatedHardware) Normalize() {
-	uh.Name = trimmedOrNil(uh.Name)
-	uh.Brand = trimmedOrNil(uh.Brand)
-	uh.Description = trimmedOrNil(uh.Description)
-	uh.PurchaseDate = trimmedOrNil(uh.PurchaseDate)
+	uh.Name = trimmed(uh.Name)
+	uh.Brand = trimmed(uh.Brand)
+	uh.Description = trimmed(uh.Description)
+	uh.PurchaseDate = trimmed(uh.PurchaseDate)
 }
 
 func (uh *UpdatedHardware) SelfValidate() []valutils.FieldError {
@@ -81,15 +81,12 @@ func (uh *UpdatedHardware) SelfValidate() []valutils.FieldError {
 	return nil
 }
 
-func trimmedOrNil(value *string) *string {
+func trimmed(value *string) *string {
 	if value == nil {
 		return nil
 	}
 
 	trimmed := strings.TrimSpace(*value)
-	if trimmed == "" {
-		return nil
-	}
 
 	return &trimmed
 }

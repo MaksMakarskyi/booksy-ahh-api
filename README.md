@@ -148,7 +148,7 @@ Authentication is `Authorization: Bearer <token>` on every route except `/health
 | `POST` | `/auth/token` | — | Exchange email + password for an access token |
 | `GET` | `/hardware` | user | List all equipment |
 | `POST` | `/hardware` | **admin** | Add equipment |
-| `PATCH` | `/hardware/:id` | **admin** | Edit name / brand / description / purchase date |
+| `PATCH` | `/hardware/:id` | **admin** | Edit name / brand / description / purchase date. Send `""` to clear a description or date |
 | `DELETE` | `/hardware/:id` | **admin** | Remove equipment |
 | `PATCH` | `/hardware/:id/repair` | **admin** | Send to repair (`available` → `repair`) |
 | `PATCH` | `/hardware/:id/available` | **admin** | Return to stock (`repair` → `available`) |
@@ -198,6 +198,7 @@ Every response carries an `X-Request-Id`, echoed in the body and in every log li
 - Users list and return only their own rentals, **regardless of role**.
 - Accounts cannot self-register. Only an admin creates accounts.
 - Admins see the full account list, their colleagues included. Deletion is narrower than listing: the `DELETE` statement matches `role = 'employee'`, so an admin account can be listed but never removed through the API, and no one can delete themselves. Both refusals are deliberate — demoting or removing the last admin would lock everybody out of account management.
+- `description` and `purchase_date` are **clearable**: `PATCH {"description": ""}` empties the field, while omitting the key leaves it alone. `name` and `brand` are not clearable — they back `NOT NULL` columns and carry meaning, so an explicit `""` is a 400 rather than an erasure. The distinction is the pointer: a nil `*string` means the key was absent, a pointer to `""` means the client sent it and wants the value gone.
 - Only `@booksy.com` addresses may hold an account. Enforced on account creation and on the startup admin bootstrap, after the address is lowercased, so `Name@BOOKSY.COM` is accepted and stored as `name@booksy.com`.
 - The seed contains **inventory only** — no accounts and no rentals. The only accounts on a fresh install are the admins listed in `ADMINS`.
 
@@ -226,7 +227,9 @@ Every domain package has the same shape: `build.go` (composition root), `handler
 
 **Error handling.** Handlers never choose status codes. They wrap errors with context (`fmt.Errorf("...: %w", err)`) and return them; a single `HTTPErrorHandler` maps sentinel errors (`ErrStoreNotFound`, `ErrStoreConflict`, `ErrStoreForbidden`, ...) onto status codes, logs the full chain, and returns a client-safe message. 5xx responses never leak internals; the detail is in the logs, correlated by request id.
 
-**Validation.** Request structs carry `validate` tags. Three custom rules are registered: `notfuture` (a date not in the future), `password` (character-class policy) and `maxbytes` (a length limit in bytes rather than runes, so a multi-byte name cannot overflow a column). The company-domain rule needs no custom code — it is the built-in `endswith`. Payload types can opt into two interfaces — `Normalizer` (trim/lowercase before validation) and `SelfValidator` (rules spanning several fields, such as "a PATCH must change something").
+**Validation.** Request structs carry `validate` tags. Four custom rules are registered: `date` (a `YYYY-MM-DD` date, or empty), `notfuture` (a date not in the future), `password` (character-class policy) and `maxbytes` (a length limit in bytes rather than runes, so a multi-byte name cannot overflow a column). The company-domain rule needs no custom code — it is the built-in `endswith`.
+
+`date` exists because the built-in `datetime` cannot express a *clearable* date. `omitempty` only skips a **nil** pointer, so a `*string` pointing at `""` — a client asking to clear the field — still reaches the rule and is rejected as a malformed date. `date` treats an empty value as nothing to check, the way `notfuture` already did. Payload types can opt into two interfaces — `Normalizer` (trim/lowercase before validation) and `SelfValidator` (rules spanning several fields, such as "a PATCH must change something").
 
 **Strict JSON.** The JSON deserialiser is replaced with one that sets `DisallowUnknownFields`. A typo like `{"stauts": ...}` returns 400 instead of being silently ignored, and an attempt to set a field the client does not own (`{"status": "available"}`) is visible rather than quietly dropped.
 
@@ -246,6 +249,7 @@ updated_at                  created_at
 ```
 
 - `hardware.status` ∈ `available | in_use | repair`, `profiles.role` ∈ `employee | admin`, both enforced by `CHECK` constraints (SQLite has no `ENUM`).
+- **`description` is `NOT NULL DEFAULT ''`; `purchase_date` is nullable.** The two are modelled differently on purpose. A description is free text, where "no description" and "an empty description" are the same fact, so allowing `NULL` would give one fact two spellings. A date is not free text: `''` is not a date but a sentinel for "unknown", and SQL would happily compare it — `WHERE purchase_date < '2023-01-01'` matches `''`, and `MIN(purchase_date)` returns it. `NULL` is what SQL provides for an unknown value, and its three-valued logic keeps those rows out of range filters and aggregates for free.
 - `rentals` is append-only history; a return sets `returned_at` rather than deleting the row. `hardware.status` is a fast projection of that history.
 - Timestamps are TEXT in RFC 3339 UTC. Dates are TEXT `YYYY-MM-DD`. SQLite has no date type, and ISO-8601 sorts correctly as a string.
 - `ON DELETE CASCADE` on `hardware_id` (deleting a device removes its history), `RESTRICT` on `user_id` (an account with rental history cannot be deleted).
@@ -294,8 +298,8 @@ updated_at                  created_at
 ### ⚠ Partial / missing
 
 - **AI layer.** Not implemented. Semantic search is the intended feature; the store interface is the seam it would attach to.
-- **PATCH cannot clear a nullable field.** `*string` cannot distinguish "absent" from "explicit null" — both decode to `nil`, and `COALESCE` reads `nil` as "keep". So `description` can be set and changed, never removed. Fixing it needs an `Optional[T]` wrapper that records key presence.
 - **No pagination.** Deliberate, per shortcut 1.
+- **"Unknown" has two spellings in `purchase_date`.** The column is nullable and the seed writes `NULL`, but the API writes `''` — both when a device is created without a date and when a PATCH clears one. Reads paper over it (`null` and `""` are both falsy in the client), yet a server-side `WHERE purchase_date IS NULL` would miss half the rows. Unifying on `NULL` means the update statement can no longer be a plain `COALESCE`, because `COALESCE` cannot express "set this to NULL" — see roadmap item 5.
 - **Deleting an admin answers `404`, not `403`.** `GET /profiles` returns every account, so the client can see admin rows it is not allowed to remove. The delete query matches `role = 'employee'`, and a statement that matches nothing is indistinguishable from a missing row, so the honest "you may not delete an admin" is reported as "no such profile". The fix is to look the row up before deleting and return a dedicated error; it is a status-code wart, not a security hole.
 
 ### 🔮 Next steps — the 24-hour roadmap
@@ -304,7 +308,7 @@ updated_at                  created_at
 2. **The AI layer — semantic search.** Embed each device's name, brand and description at write time, store the vectors alongside the rows, and rank by cosine similarity at query time. `"something to test a mobile app on"` should return the iPhone and the Galaxy.
 3. **Refresh tokens and rate limiting.** Shorten the access token, add rotation, and put a more granular rate limiter on the endpoints, possibly selecting more thoughtful limiting keys like the JWT("sub") key instead of the IP address for protected routes.
 4. **Come up with a way to delete a user with rental history.** For example, make a delete operation work in the way that the account is being blocked forever from access to it (set the password_hash equal to "!") and delete user data such as `"email"` and `"full_name"` or set them to some random string and "Deleted Employee" values. Or just add a flag called deleted that allows distinguishing between the deleted account and active ones at the DB and Application levels.
-5. **Improve JSON decode and PATCH updates.** Introduce `Optional[T]` wrapper for the fields that might be set to an empty string instead of `*string`.
+5. **Give `purchase_date` a single spelling for "unknown".** Clearing a date currently stores `''` while the seed stores `NULL`, so the nullable column holds two versions of the same fact. The write path needs `''` mapped to `NULL`, which means replacing `COALESCE($4, purchase_date)` with a `CASE` that separates "key absent" from "key present and empty" — `COALESCE` alone cannot set a column to `NULL`. An `Optional[T]` wrapper would make that distinction a type rather than a convention, which is the better answer once a field appears where `''` is itself a meaningful value.
 6. **Improve business logic.** Clarify the boundaries of admin capabilities. For example, can an admin manage the rentals of the employees? Or, does the employee need to request approval of the hardware rental?
 7. **Add tiny functionalities for better UX.** For example, add notifications for the users that will notify them when the needed hardware is back to `"available"` status. Or, add a queue for the hardware, so that employees just put them into the virtual queue to get the awaited hardware instead of constantly monitoring for the device availability.
 8. **Move to a more production-ready store.** Migrate to a more mature database such as Postgres to have broader functionality in the future. The earlier the migration happens, the easier it will be to do it. Additionally, using something like Supabase would allow you to make changes to the user interface, allowing you to fix things and control the most important things, such as admin management, manually.
@@ -325,7 +329,7 @@ That is a deliberate choice over unit tests with mocked stores. Nearly every def
 | --- | --- |
 | `tests/api_test.go` | the harness — the whole vocabulary the other four files use |
 | `tests/auth_test.go` | login, indistinguishable failure modes, malformed payloads, token rejection, rate limiting |
-| `tests/hardware_test.go` | CRUD, validation, repair transitions, admin-only writes, strict JSON |
+| `tests/hardware_test.go` | CRUD, validation, repair transitions, admin-only writes, strict JSON, clearing a field vs omitting it |
 | `tests/rentals_test.go` | rent/return round trip, double-rent, ownership scoping, conflicts |
 | `tests/profiles_test.go` | account creation, the `@booksy.com` rule, password policy, delete guards |
 
@@ -346,7 +350,7 @@ Request bodies in the tables are raw JSON strings rather than Go values, so each
 
 The rate limit is configurable (`RATE_LIMIT_RPS`) largely because of this suite: the production value of 15 requests per second throttles a test that drives the API as fast as the CPU allows. The harness raises it, and one test lowers it again to prove the middleware is still wired up.
 
-Statement coverage of `internal/...` is **75.7%**. The uncovered remainder is mostly `ErrStoreInternal` branches, which require a database-level failure to reach.
+Statement coverage of `internal/...` is **75.0%**. The uncovered remainder is mostly `ErrStoreInternal` branches, which require a database-level failure to reach.
 
 The suite also exercises startup: every test runs the real migrations and the real admin bootstrap, so a broken migration or a bootstrap regression fails the build.
 
@@ -375,9 +379,10 @@ The provided dataset is deliberately dirty. Every record was audited before inse
 | MacBook Air M2: `"Available"` with liquid damage in `history` | Same reasoning — forced to `repair`. |
 | `assignedTo: "j.doe@booksy.com"` on an in-use device | Recorded in the device description and seeded as `available`. An earlier revision created a placeholder account and an open rental to keep `in_use` consistent — but placeholders have no usable password, and a rental may only be returned by its owner, so those devices were permanently stuck. Seeding inventory only keeps every row in a state a real user can act on. |
 | `"In Use"` with **no** assignee | Same resolution: seeded as `available`. Claiming a device is on the shelf when someone physically holds it is a real loss of information, but it is recoverable — an admin re-issues it through the app. A device frozen in `in_use` with no one able to return it is not. |
-| Empty brand, null date | Kept as-is. Absent is a legitimate value. |
+| Empty brand (`""`) on the "Unknown Device" | Replaced with the placeholder `"Unknown Brand"`. `brand` is `NOT NULL` and the API requires `min=1`, so a blank brand is a row the application itself could never create — the same class of problem as the `in_use` devices above. The placeholder is visibly a placeholder, and the row stays quarantined in `repair` until a human identifies it. |
+| Null purchase date | Kept as `NULL`. Absent is a legitimate value, and the column is nullable precisely so it can be said. |
 
-The general principle: **normalise what is unambiguous, quarantine what is not, and never invent.**
+The general principle: **normalise what is unambiguous, quarantine what is not, and never invent.** The brand placeholder is the one deliberate exception, and it is an admission of ignorance rather than a fabricated fact: writing `"Unknown Brand"` claims nothing about the device, whereas guessing `"Logitech"` would.
 
 ### Prompt trail
 

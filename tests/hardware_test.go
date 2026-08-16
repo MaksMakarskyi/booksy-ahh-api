@@ -129,6 +129,110 @@ func TestUpdateHardware(t *testing.T) {
 	}
 }
 
+func TestClearableFieldsDistinguishEmptyFromAbsent(t *testing.T) {
+	a := newAPI(t)
+
+	fill := `{"description":"Some note","purchase_date":"2024-03-15"}`
+
+	tests := []struct {
+		name, body, wantDescription, wantPurchaseDate string
+	}{
+		{"clear the description", `{"description":""}`, "", "2024-03-15"},
+		{"clear the purchase date", `{"purchase_date":""}`, "Some note", ""},
+		{"clear both at once", `{"description":"","purchase_date":""}`, "", ""},
+		{"whitespace clears too", `{"description":"   "}`, "", "2024-03-15"},
+		{"an absent key changes nothing", `{"name":"Renamed"}`, "Some note", "2024-03-15"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := a.device("Clearable")
+			path := fmt.Sprintf("/hardware/%d", id)
+
+			if status, body := a.call(a.admin, "PATCH", path, fill); status != 200 {
+				t.Fatalf("fill: status = %d, want 200 (%s)", status, body)
+			}
+
+			status, body := a.call(a.admin, "PATCH", path, tt.body)
+			if status != 200 {
+				t.Fatalf("status = %d, want 200 (%s)", status, body)
+			}
+			if got := field(t, body, "data.description"); got != tt.wantDescription {
+				t.Errorf("description = %q, want %q", got, tt.wantDescription)
+			}
+			if got := field(t, body, "data.purchase_date"); got != tt.wantPurchaseDate {
+				t.Errorf("purchase_date = %q, want %q", got, tt.wantPurchaseDate)
+			}
+
+			// The cleared value must survive a re-read, not just the RETURNING row.
+			_, list := a.call(a.admin, "GET", "/hardware", "")
+			for i := range count(t, list, "data") {
+				if field(t, list, fmt.Sprintf("data.%d.id", i)) != id {
+					continue
+				}
+				if got := field(t, list, fmt.Sprintf("data.%d.description", i)); got != tt.wantDescription {
+					t.Errorf("description after re-read = %q, want %q", got, tt.wantDescription)
+				}
+			}
+		})
+	}
+}
+
+// name and brand back NOT NULL columns and carry meaning, so clearing them is
+// a mistake rather than an erasure.
+func TestNameAndBrandCannotBeCleared(t *testing.T) {
+	a := newAPI(t)
+
+	tests := []struct {
+		name, body, wantField string
+	}{
+		{"empty name", `{"name":""}`, "name"},
+		{"blank name", `{"name":"   "}`, "name"},
+		{"empty brand", `{"brand":""}`, "brand"},
+		{"empty name alongside a real change", `{"name":"","description":"ok"}`, "name"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := a.device("Keeps Its Name")
+
+			status, body := a.call(a.admin, "PATCH", fmt.Sprintf("/hardware/%d", id), tt.body)
+			if status != 400 {
+				t.Fatalf("status = %d, want 400 (%s)", status, body)
+			}
+			if got := field(t, body, "error.fields.0.field"); got != tt.wantField {
+				t.Errorf("rejected field = %v, want %s (%s)", got, tt.wantField, body)
+			}
+		})
+	}
+}
+
+func TestCreateAcceptsEmptyOptionalFields(t *testing.T) {
+	a := newAPI(t)
+
+	tests := []struct {
+		name, body string
+	}{
+		{"both keys absent", `{"name":"Bare","brand":"B"}`},
+		{"both keys empty", `{"name":"Empty","brand":"B","description":"","purchase_date":""}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, body := a.call(a.admin, "POST", "/hardware", tt.body)
+			if status != 201 {
+				t.Fatalf("status = %d, want 201 (%s)", status, body)
+			}
+			if got := field(t, body, "data.description"); got != "" {
+				t.Errorf("description = %q, want empty", got)
+			}
+			if got := field(t, body, "data.purchase_date"); got != "" {
+				t.Errorf("purchase_date = %q, want empty", got)
+			}
+		})
+	}
+}
+
 func TestDeleteHardware(t *testing.T) {
 	a := newAPI(t)
 	id := a.device("Doomed")

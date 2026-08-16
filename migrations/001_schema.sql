@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS hardware (
     id            INTEGER PRIMARY KEY,
     name          TEXT NOT NULL,
     brand         TEXT NOT NULL,
-    description   TEXT,
+    description   TEXT NOT NULL DEFAULT '',
     purchase_date TEXT,
     status        TEXT NOT NULL DEFAULT 'available'
                   CHECK (status IN ('available', 'in_use', 'repair')),
@@ -27,9 +27,6 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 CREATE TABLE IF NOT EXISTS rentals (
     id          INTEGER PRIMARY KEY,
-    -- CASCADE: deleting a device is an admin feature, and its rental history
-    -- has no meaning without it. RESTRICT on the user instead — an account
-    -- holding equipment must not be deletable while it still has it.
     hardware_id INTEGER NOT NULL REFERENCES hardware (id) ON DELETE CASCADE,
     user_id     INTEGER NOT NULL REFERENCES profiles (id) ON DELETE RESTRICT,
     rented_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),

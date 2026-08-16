@@ -9,8 +9,6 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// StrictJSONSerializer rejects request bodies containing fields the target
-// struct does not declare.
 type StrictJSONSerializer struct {
 	echo.DefaultJSONSerializer
 }
@@ -32,10 +30,6 @@ func (StrictJSONSerializer) Deserialize(c *echo.Context, target any) error {
 	return nil
 }
 
-// unknownFieldError rewrites encoding/json's message into something a client
-// can act on. The stdlib phrasing is:
-//
-//	json: unknown field "stauts"
 func unknownFieldError(err error) error {
 	const prefix = "json: unknown field "
 

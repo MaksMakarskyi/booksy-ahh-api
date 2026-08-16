@@ -34,10 +34,10 @@ INSERT INTO hardware (id, name, brand, purchase_date, status, description) VALUE
 -- an open rental requires an account that can log in to close it. Neither
 -- holder from the source is a real user of this system, so the honest starting
 -- state is "on the shelf". The rental history begins empty.
-(1, 'Apple iPhone 13 Pro Max', 'Apple',   '2021-11-23', 'available', NULL),
-(2, 'Apple MacBook Pro 13',    'Apple',   '2021-12-20', 'available', NULL),
-(3, 'Razer Basilisk V2',       'Razer',   '2021-06-05', 'repair',    NULL),
-(4, 'SAMSUNG Galaxy S21',      'Samsung', '2021-11-23', 'available', NULL),
+(1, 'Apple iPhone 13 Pro Max', 'Apple',   '2021-11-23', 'available', ''),
+(2, 'Apple MacBook Pro 13',    'Apple',   '2021-12-20', 'available', ''),
+(3, 'Razer Basilisk V2',       'Razer',   '2021-06-05', 'repair',    ''),
+(4, 'SAMSUNG Galaxy S21',      'Samsung', '2021-11-23', 'available', ''),
 
 -- [D-2] Source says "Available" while the note says the battery is swelling
 -- and it must not be issued. A swelling lithium cell is a fire hazard, so the
@@ -62,14 +62,14 @@ INSERT INTO hardware (id, name, brand, purchase_date, status, description) VALUE
 -- [D-4] Corrections applied only where unambiguous: 'Appel' is a clear
 -- misspelling, and '22-05-2023' can only be DD-MM-YYYY since there is no
 -- month 22. Contrast with [D-3], where no reading is forced.
-(9, 'iPad Pro 12.9', 'Apple', '2023-05-22', 'available', NULL),
+(9, 'iPad Pro 12.9', 'Apple', '2023-05-22', 'available', ''),
 
 -- [D-5] Source status 'Unknown' is not a value our model has. Quarantined as
 -- 'repair' — imperfect, since the device isn't broken but unidentified, yet
 -- 'repair' is the only existing state that blocks renting. A fourth status
 -- ('quarantined') is the better long-term model and a deliberate deferral.
-(10, 'Unknown Device', '', NULL, 'repair',
-     'Data quality: source status "Unknown"; brand missing. '
+(10, 'Unknown Device', 'Unknown Brand', NULL, 'repair',
+     'Data quality: source status "Unknown"; brand missing.'
      || 'Quarantined pending identification.'),
 
 -- [D-2] Same reasoning as hardware 5: liquid damage, not rentable.

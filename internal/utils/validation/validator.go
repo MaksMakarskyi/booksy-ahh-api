@@ -29,6 +29,21 @@ func NewCustomValidator() *CustomValidator {
 		return name
 	})
 
+	// `datetime` cannot be used for a clearable date: go-playground's
+	// `omitempty` only skips a nil pointer, so a *string pointing at "" — the
+	// client asking to clear the field — still reaches the rule and fails.
+	// This one treats an empty value as nothing to check, like notfuture does.
+	_ = val.RegisterValidation("date", func(fl validator.FieldLevel) bool {
+		value := fl.Field().String()
+		if value == "" {
+			return true
+		}
+
+		_, err := time.Parse(DateLayout, value)
+
+		return err == nil
+	})
+
 	_ = val.RegisterValidation("notfuture", func(fl validator.FieldLevel) bool {
 		value := fl.Field().String()
 		if value == "" {
@@ -150,7 +165,7 @@ func message(fe validator.FieldError) string {
 		return fmt.Sprintf("must be at least %s characters", fe.Param())
 	case "max":
 		return fmt.Sprintf("must be at most %s characters", fe.Param())
-	case "datetime":
+	case "datetime", "date":
 		return "must be a date in YYYY-MM-DD format"
 	case "notfuture":
 		return "cannot be in the future"
