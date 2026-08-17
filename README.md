@@ -4,7 +4,7 @@ Internal tool for Booksy employees to manage, rent and maintain company equipmen
 
 - **Live demo:** [booksy-ahh.vercel.app](https://booksy-ahh.vercel.app/) 
 - **API:** [booksy-ahh-api.fly.dev](https://booksy-ahh-api.fly.dev/)
-- **Frontend repository:** [https://github.com/MaksMakarskyi/booksy-ahh-website](https://github.com/MaksMakarskyi/booksy-ahh-website)
+- **Frontend repository:** [github.com/MaksMakarskyi/booksy-ahh-website](https://github.com/MaksMakarskyi/booksy-ahh-website)
 
 | | |
 | --- | --- |
